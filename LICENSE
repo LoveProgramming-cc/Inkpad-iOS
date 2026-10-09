@@ -1,0 +1,35 @@
+Inkpad for iPad, iPhone and Mac — Non-Commercial Source License
+
+Copyright (c) 2026 Koen Tsao
+
+Permission is granted, free of charge, to any person obtaining a copy of this
+software and its source code (the "Software") to use, copy, modify and
+redistribute the Software, subject to all of the following conditions:
+
+1. Non-commercial use only. Neither the Software, nor any part of its code,
+   nor any work that contains or is derived from any part of its code, may be
+   used for commercial purposes. "Commercial purposes" means any use intended
+   for or directed toward commercial advantage or monetary compensation,
+   including selling it, offering it as part of a paid product or service,
+   placing advertising in it, or using it inside a for-profit product.
+
+2. The same terms carry over. Any project that includes or derives from any
+   part of the Software's code must be distributed under these same terms, and
+   must itself not be commercial.
+
+3. Notices are kept. This license text, the copyright notice above and the
+   statement about the use of AI in README.md must be included with every copy
+   or substantial portion of the Software.
+
+4. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE
+   OR ITS USE.
+
+This Software is a port of the Inkpad desktop application for GNOME and reuses
+its file format, sync protocol, interface design, translations and icon data.
+Those parts remain subject to whatever terms their original authors set; this
+license covers only what was added here and grants nothing beyond what those
+terms allow. The Lucide icons are distributed under the ISC License.
+
+For anything this license does not permit, ask the copyright holder first.

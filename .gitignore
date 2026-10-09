@@ -1,0 +1,8 @@
+.DS_Store
+dist/
+iloader.app/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.ipa
