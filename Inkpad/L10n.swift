@@ -30,6 +30,10 @@ enum L10n {
     }()
 
     static let extraEN: [String: String] = [
+        "“%s”缺少它的 PDF 或图片，暂时无法补全：%s": "“%s” is missing its PDFs or pictures and could not be completed for now: %s",
+        "从云端下载的 PDF 或图片（%s）内容不对，没有使用它。请再同步一次。": "A PDF or picture downloaded from the cloud (%s) did not have the right content and was not used. Please sync again.",
+        "上传的 PDF 或图片在云端的校验值不对，请再同步一次": "A PDF or picture arrived in the cloud with the wrong checksum; please sync again",
+        "上传的笔记本在云端的校验值不对，请再同步一次": "The notebook arrived in the cloud with the wrong checksum; please sync again",
         "云端缺少这本笔记里的一个 PDF 或图片（%s）。请在仍有这本笔记的设备上同步一次。": "A PDF or picture of this notebook is missing from the cloud (%s). Please sync once on a device that still has the notebook.",
         "云端的笔记是由更新版本的 Inkpad 同步的，请先更新这台设备上的 Inkpad": "The notes in the cloud were synced by a newer version of Inkpad; please update Inkpad on this device first",
         "“%s”在同步时一直被其它设备更改，请稍后再同步": "“%s” kept being changed by another device during the sync; please sync again later",
@@ -74,6 +78,10 @@ enum L10n {
     ]
 
     static let extraJA: [String: String] = [
+        "“%s”缺少它的 PDF 或图片，暂时无法补全：%s": "「%s」の PDF または画像が欠けており、今は補えません：%s",
+        "从云端下载的 PDF 或图片（%s）内容不对，没有使用它。请再同步一次。": "クラウドからダウンロードした PDF または画像（%s）の内容が正しくないため、使用しませんでした。もう一度同期してください。",
+        "上传的 PDF 或图片在云端的校验值不对，请再同步一次": "アップロードした PDF または画像のクラウド上のチェックサムが一致しません。もう一度同期してください",
+        "上传的笔记本在云端的校验值不对，请再同步一次": "アップロードしたノートのクラウド上のチェックサムが一致しません。もう一度同期してください",
         "云端缺少这本笔记里的一个 PDF 或图片（%s）。请在仍有这本笔记的设备上同步一次。": "このノートの PDF または画像がクラウドにありません（%s）。このノートが残っているデバイスで一度同期してください。",
         "云端的笔记是由更新版本的 Inkpad 同步的，请先更新这台设备上的 Inkpad": "クラウドのノートは新しいバージョンの Inkpad で同期されています。先にこのデバイスの Inkpad を更新してください",
         "“%s”在同步时一直被其它设备更改，请稍后再同步": "「%s」は同期中に他のデバイスで変更され続けました。後でもう一度同期してください",

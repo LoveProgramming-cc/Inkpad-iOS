@@ -297,7 +297,9 @@ final class Document {
             var d: [String: Any] = ["id": page.id, "w": page.w, "h": page.h, "paper": page.paper, "color": page.color.list]
             if page.board { d["board"] = true }
             if let pdf = page.pdf {
-                var n = pdfs.firstIndex { $0 === pdf || $0.key == pdf.key }
+                // The same PDF is written once. The key only picks out which ones to look at:
+                // two are the same when their bytes are.
+                var n = pdfs.firstIndex { $0 === pdf || ($0.key == pdf.key && $0.data == pdf.data) }
                 if n == nil {
                     pdfs.append(pdf)
                     n = pdfs.count - 1
@@ -374,21 +376,30 @@ final class Document {
         guard let meta = try JSONSerialization.jsonObject(with: z.read("document.json")) as? [String: Any],
               meta["format"] as? String == "inkpad" else { throw ZipError(tr("不是 Inkpad 文档")) }
         // The same PDF or picture stored twice is read once, and so saved once from then on.
-        var pdfs: [PdfDoc] = [], samePDF: [String: PdfDoc] = [:]
+        // (A size and checksum seen before is a sign that it may be a second copy; it is one
+        // when its bytes are the same.)
+        var pdfs: [PdfDoc] = [], samePDF: [String: [PdfDoc]] = [:]
         while let e = z.entry("pdf/\(pdfs.count).pdf") {
             let key = "\(e.size)/\(e.crc)"
-            if samePDF[key] == nil {
-                let pdf = try PdfDoc(z.read(e.name))
-                pdf.key = key
-                samePDF[key] = pdf
+            let data = try z.read(e.name)
+            var twin = samePDF[key]?.first { $0.data == data }
+            if twin == nil {
+                twin = try PdfDoc(data)
+                twin!.key = key
+                samePDF[key, default: []].append(twin!)
             }
-            pdfs.append(samePDF[key]!)
+            pdfs.append(twin!)
         }
-        var images: [ImageData] = [], sameImage: [String: ImageData] = [:]
+        var images: [ImageData] = [], sameImage: [String: [ImageData]] = [:]
         while let e = z.entry("img/\(images.count).png") {
             let key = "\(e.size)/\(e.crc)"
-            if sameImage[key] == nil { sameImage[key] = ImageData(try z.read(e.name)) }
-            images.append(sameImage[key]!)
+            let data = try z.read(e.name)
+            var twin = sameImage[key]?.first { $0.data == data }
+            if twin == nil {
+                twin = ImageData(data)
+                sameImage[key, default: []].append(twin!)
+            }
+            images.append(twin!)
         }
         let doc = Document()
         doc.id = meta["id"] as? String ?? doc.id

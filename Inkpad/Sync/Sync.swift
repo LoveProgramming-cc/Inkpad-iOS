@@ -70,6 +70,7 @@ protocol DriveAPI: AnyObject {
 
 struct SyncSummary: Equatable {
     var up = 0, down = 0, conflicts = 0, merged = 0, removed = 0, moved = 0
+    var mended = 0   // notebooks found here without their PDFs and made whole again
     var meta = false
 }
 
@@ -82,9 +83,11 @@ enum LibrarySync {
     /// user asked for, or "" for one named Inkpad at the top of their Drive. When it is not the
     /// folder this device synced with before, what was remembered about that one is dropped,
     /// so that the library is compared with the new folder from nothing.
-    static func cloudFolder(_ state: inout [String: Any], _ drive: DriveAPI, wanted: String) async throws -> String {
+    static func cloudFolder(_ state: inout [String: Any], _ drive: DriveAPI, wanted: String, check: Bool = true) async throws -> String {
         if (state["folder_set"] as? String ?? "") != wanted {
             state = ["folder_set": wanted]
+        } else if !check, let root = state["root"] as? String, !root.isEmpty {
+            return root   // taken on trust; a thorough sync looks
         }
         if !wanted.isEmpty {
             var there = false
@@ -128,28 +131,50 @@ enum LibrarySync {
 
     static var blobMin = 32 * 1024      // a PDF or picture at least this big is kept on Drive as a file of its own
     static let blobsName = "blobs.json"   // in an uploaded notebook: {name in the zip: name of the file on Drive}
-    static let format = 2                 // of the index; 2 is the one in which notebooks are uploaded without their blobs
+    static let format = 3                 // of the index. 2: notebooks are uploaded without their blobs; 3: blobs named by SHA-256
+    static var thoroughEvery = 6 * 3600.0 // seconds after which a sync checks the index against Drive unasked
 
     static func isBlob(_ e: ZipEntry) -> Bool {
         (e.name.hasPrefix("pdf/") || e.name.hasPrefix("img/")) && e.size >= blobMin
     }
 
-    static func blobName(_ e: ZipEntry) -> String { String(format: "blob-%08x-%d", e.crc, e.size) }
+    // A blob is known by the SHA-256 of its content: two that carry the same name are the same
+    // bytes, as far as anyone can tell, and one that is downloaded is checked against its name.
+    // (Before, in index format 2, the name was the zip's CRC-32 and the size, which is not enough
+    // to say that two files are the same. Notebooks uploaded then still list those names, and
+    // are read; whatever is uploaded now uses the new ones.)
+    static let shaPrefix = "blob-sha256-"
+
+    static func oldName(_ e: ZipEntry) -> String { String(format: "blob-%08x-%d", e.crc, e.size) }
+
+    static func shaName(_ data: Data) -> String {
+        shaPrefix + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// What was found of one blob in a notebook the last time: [CRC, size, name of the blob].
+    private static func named(_ seen: [String: Any]?, _ e: ZipEntry) -> String? {
+        guard let was = seen?[e.name] as? [Any], was.count == 3,
+              (was[0] as? NSNumber)?.uint32Value == e.crc, (was[1] as? NSNumber)?.intValue == e.size else { return nil }
+        return was[2] as? String
+    }
 
     /// Write to `dest` the notebook as it is uploaded: without its large PDFs and pictures, and
     /// with a list of them instead. Those for which `have` is false are written next to
-    /// `dest`, to be uploaded first. Returns the whole file's checksum, its fileSign() and
-    /// where each such blob was written.
+    /// `dest`, to be uploaded first. Returns the file's fileSign(), where each such blob was
+    /// written, and what to pass as `seen` the next time.
+    ///
+    /// `seen` is what was found in this notebook the last time: {name in the zip: [CRC, size,
+    /// name of the blob]}. A PDF that is still in the same place with the same CRC and size is
+    /// the one that was there then, and is not read through again to name it; so sending a
+    /// line written in a 200 MB book does not mean reading the book.
     ///
     /// The file is read once, so all of this is about one version of it even if it is saved
     /// again meanwhile.
-    static func slim(_ url: URL, to dest: URL, have: (String) -> Bool) throws -> (md5: String, stat: String, blobs: [String: URL]) {
+    static func slim(_ url: URL, to dest: URL, seen: [String: Any]? = nil, have: (String) -> Bool) throws -> (stat: String, blobs: [String: URL], found: [String: Any]) {
         let stat = fileSign(url) ?? ""
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        let sum = Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let z = try ZipReader(data: data)
+        let z = try ZipReader(data: Data(contentsOf: url, options: .mappedIfSafe))
         let out = try ZipWriter(url: dest)
-        var listed: [String: String] = [:], parts: [String: URL] = [:]
+        var listed: [String: String] = [:], parts: [String: URL] = [:], found: [String: Any] = [:]
         do {
             var done = Set<String>()
             for e in z.entries.reversed() where done.insert(e.name).inserted && e.name != blobsName {
@@ -157,8 +182,9 @@ enum LibrarySync {
                     try out.addRaw(e.name, method: e.method, crc: e.crc, size: e.size, raw: z.raw(e))
                     continue
                 }
-                let name = blobName(e)
+                let name = try named(seen, e) ?? shaName(z.read(e.name))
                 listed[e.name] = name
+                found[e.name] = [NSNumber(value: e.crc), e.size, name] as [Any]
                 if parts[name] == nil, !have(name) {
                     let part = dest.appendingPathExtension(name)
                     try z.read(e.name).write(to: part)
@@ -171,20 +197,32 @@ enum LibrarySync {
             out.abandon()
             throw error
         }
-        return (sum, stat, parts)
+        return (stat, parts, found)
     }
 
     /// Make a downloaded notebook whole again: its large PDFs and pictures are taken from the
     /// copy of it that is here already (`have`) where that has them, and downloaded with
     /// `fetch(name of the blob, where to)` otherwise.
-    static func fatten(_ part: URL, have: URL?, fetch: (String, URL) async throws -> Void) async throws {
+    static func fatten(_ part: URL, have: URL?, seen: [String: Any]? = nil, fetch: (String, URL) async throws -> Void) async throws {
         let fm = FileManager.default
         let z = try ZipReader(url: part)
         guard z.has(blobsName) else { return }   // uploaded whole, by an earlier version
         let listed = (try JSONSerialization.jsonObject(with: z.read(blobsName)) as? [String: String]) ?? [:]
         let old = have.flatMap { try? ZipReader(url: $0) }
-        var here: [String: ZipEntry] = [:]
-        for e in old?.entries ?? [] where isBlob(e) { here[blobName(e)] = e }
+        let mine = (old?.entries ?? []).filter(isBlob)
+        var byOld: [String: ZipEntry] = [:]
+        for e in mine { byOld[oldName(e)] = e }
+        var bySHA: [String: ZipEntry]?   // worked out when first asked for: it means reading every one of them
+        func local(_ blob: String) throws -> ZipEntry? {
+            guard blob.hasPrefix(shaPrefix) else { return byOld[blob] }
+            if bySHA == nil {
+                var all: [String: ZipEntry] = [:]
+                // Named before and not changed since, or read through now.
+                for e in mine { all[try named(seen, e) ?? shaName(old!.read(e.name))] = e }
+                bySHA = all
+            }
+            return bySHA?[blob]
+        }
         let full = part.appendingPathExtension("full")
         let out = try ZipWriter(url: full)
         do {
@@ -192,13 +230,17 @@ enum LibrarySync {
                 try out.addRaw(e.name, method: e.method, crc: e.crc, size: e.size, raw: z.raw(e))
             }
             for (name, blob) in listed.sorted(by: { $0.key < $1.key }) {
-                if let old, let e = here[blob] {
+                if let old, let e = try local(blob) {
                     try out.addRaw(name, method: e.method, crc: e.crc, size: e.size, raw: old.raw(e))
                 } else {
                     let tmp = full.appendingPathExtension("blob")
                     try await fetch(blob, tmp)
+                    let data = try Data(contentsOf: tmp, options: .mappedIfSafe)
+                    if blob.hasPrefix(shaPrefix), shaName(data) != blob {
+                        throw DriveError(trf("从云端下载的 PDF 或图片（%s）内容不对，没有使用它。请再同步一次。", String(blob.prefix(24))))
+                    }
                     // Stored, as the app itself writes them: they are compressed already.
-                    try out.add(name, Data(contentsOf: tmp, options: .mappedIfSafe), compress: false)
+                    try out.add(name, data, compress: false)
                     try? fm.removeItem(at: tmp)
                 }
             }
@@ -208,6 +250,15 @@ enum LibrarySync {
             throw error
         }
         _ = try fm.replaceItemAt(part, withItemAt: full)
+    }
+
+    /// Whether a notebook in the library is one as it is uploaded, without its large PDFs and
+    /// pictures. That is never meant to be: it is what a download that was cut off before those
+    /// had come left behind, or what a version of the app from before they were kept apart put
+    /// in place of the whole notebook. It cannot be opened, and must not be taken for a
+    /// notebook that is up to date, or be sent anywhere.
+    static func stripped(_ url: URL) -> Bool {
+        (try? ZipReader(url: url))?.has(blobsName) ?? false
     }
 
     static func fetcher(_ drive: DriveAPI, _ rootID: String, _ names: @escaping () -> [String: String]) -> (String, URL) async throws -> Void {
@@ -329,12 +380,14 @@ enum LibrarySync {
             }
             let target = unique(rel.split(separator: "/").reduce(root) { $0.appendingPathComponent(String($1)) })
             try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try await drive.download(file, to: target)
             if names == nil {
                 names = Dictionary(try await drive.children(rootID).map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })
             }
             let all = names ?? [:]
-            try await fatten(target, have: nil, fetch: fetcher(drive, rootID) { all })
+            let coming = target.appendingPathExtension("part")   // whole before it is given its name in the library
+            try await drive.download(file, to: coming)
+            try await fatten(coming, have: nil, fetch: fetcher(drive, rootID) { all })
+            try fm.moveItem(at: coming, to: target)
             let now = relPath(target, root)
             // It is a live notebook again, on both sides, with what the cloud holds.
             entry["deleted"] = false
@@ -379,35 +432,65 @@ enum LibrarySync {
     /// reports how far along the sync is: one step for reading the index, one per
     /// notebook (advancing with the bytes of its transfer) and one for the end.
     ///
+    /// A sync is quick or thorough. A quick one takes the index at its word about what is on
+    /// Drive, and this device's own record about which notebooks were written since the last
+    /// sync: it reads the index, moves what differs and writes the index back. It is what runs
+    /// on leaving a notebook and while one is open. A thorough one also lists the folder on
+    /// Drive and puts right what does not fit: files deleted there, a folder that is gone, an
+    /// index that is behind the files. That is done when asked for (`thorough: true`: the
+    /// user's "sync now", and once when the app starts), when it has not been done for some
+    /// hours, and when a quick sync comes upon something on Drive that is not there.
+    ///
     /// With `only`, nothing but those notebooks is looked at, which takes a few requests and is
     /// what an open notebook is kept up to date with while it is being written in.
-    static func sync(root: URL, drive: DriveAPI, skip: [URL] = [], only: [URL]? = nil, folder: String = "", progress: ((Double, String) -> Void)? = nil) async throws -> SyncSummary {
+    static func sync(root: URL, drive: DriveAPI, skip: [URL] = [], only: [URL]? = nil, folder: String = "", thorough: Bool? = nil,
+                     progress: ((Double, String) -> Void)? = nil) async throws -> SyncSummary {
+        var all = thorough
+        if all == nil {
+            let state = loadJSON(root.standardizedFileURL.appendingPathComponent(".sync.json"))
+            all = state["index"] as? String == nil || Date().timeIntervalSince1970 - num(state["checked"]) > thoroughEvery
+        }
+        do {
+            return try await run(root: root, drive: drive, skip: skip, only: only, folder: folder, thorough: all!, progress: progress)
+        } catch let error as DriveError where all == false && error.code == 404 {
+            // Something was not where the index said.
+            return try await run(root: root, drive: drive, skip: skip, only: only, folder: folder, thorough: true, progress: progress)
+        }
+    }
+
+    private static func run(root: URL, drive: DriveAPI, skip: [URL], only: [URL]?, folder: String, thorough: Bool,
+                            progress: ((Double, String) -> Void)?) async throws -> SyncSummary {
         let fm = FileManager.default
         let root = root.standardizedFileURL
         let report = progress ?? { _, _ in }
         report(0, tr("正在读取云端目录…"))
         let statePath = root.appendingPathComponent(".sync.json")
         var state = loadJSON(statePath)
-        // What was remembered about the cloud is checked against what is really there: the folder
-        // may be another one now, or have been deleted on Drive, and so may any of the files in it.
-        let rootID = try await cloudFolder(&state, drive, wanted: folder)
-        // id -> {'path', 'trashed', 'md5'} when both sides last agreed
+        let rootID = try await cloudFolder(&state, drive, wanted: folder, check: thorough)
+        // id -> {'path', 'trashed', 'md5', ...} when both sides last agreed
         var known = state["items"] as? [String: [String: Any]] ?? [:]
         let trashDir = root.appendingPathComponent(".trash", isDirectory: true)
         try fm.createDirectory(at: trashDir, withIntermediateDirectories: true)
         var summary = SyncSummary()
 
-        let inFolder = try await drive.children(rootID)
-        let live = Set(inFolder.map(\.id))
+        // A thorough sync has the folder's listing to go by; a quick one has only the index.
+        let inFolder = thorough ? try await drive.children(rootID) : nil
+        let live = inFolder.map { Set($0.map(\.id)) }
         var indexID = state["index"] as? String
-        if indexID == nil || !live.contains(indexID!) { indexID = inFolder.first { $0.name == indexName }?.id }
+        if let inFolder, let live {
+            if indexID == nil || !live.contains(indexID!) { indexID = inFolder.first { $0.name == indexName }?.id }
+        } else if indexID == nil {
+            indexID = try await drive.find(indexName, parent: rootID)
+        }
         var cloud: [String: Any] = [:]
         if let indexID { cloud = try await drive.getJSON(indexID) }
         if num(cloud["format"], 1) > Double(format) {
             throw DriveError(tr("云端的笔记是由更新版本的 Inkpad 同步的，请先更新这台设备上的 Inkpad"))
         }
-        var names = Dictionary(inFolder.map { ($0.name, $0.id) }, uniquingKeysWith: { a, _ in a })   // of the files on Drive, for finding blobs
+        // The PDFs and pictures kept on Drive as files of their own are listed in the index too.
+        var names = cloud["blobs"] as? [String: String] ?? [:]   // name -> Drive file
         let fetch = fetcher(drive, rootID) { names }
+        var blobsSeen: [String: [String: Any]] = [:]   // id -> the blobs found in the notebook when it was sent: see slim()
         let workDir = root.appendingPathComponent(".sync", isDirectory: true)
         try? fm.removeItem(at: workDir)   // whatever a sync that was cut off left behind
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
@@ -415,28 +498,39 @@ enum LibrarySync {
         // id -> {'path', 'trashed', 'md5', 'file', 'deleted', 'ts'}
         var items: [String: Ref] = [:]
         for (nid, value) in cloud["items"] as? [String: Any] ?? [:] { items[nid] = Ref(value as? [String: Any] ?? [:]) }
-        for (nid, entry) in items where entry.file == nil || !live.contains(entry.file!) {
-            if entry.deleted {
-                entry.d["file"] = NSNull()   // still a deletion to pass on, with nothing left to restore
-            } else {
-                // Listed, but its file is gone from Drive. Forgotten here, it is sent again by
-                // whichever device still has it.
-                items[nid] = nil
+        for part in ["items", "blobs"] where cloud[part] == nil { cloud[part] = [String: Any]() }
+        let read0 = cloud         // the index as it was read, to tell later what others changed
+        if let inFolder, let live {
+            for (nid, entry) in items where entry.file == nil || !live.contains(entry.file!) {
+                if entry.deleted {
+                    entry.d["file"] = NSNull()   // still a deletion to pass on, with nothing left to restore
+                } else {
+                    // Listed, but its file is gone from Drive. Forgotten here, it is sent again by
+                    // whichever device still has it.
+                    items[nid] = nil
+                }
             }
-        }
-        let actual = Dictionary(inFolder.compactMap { f in f.md5.map { (f.id, $0) } }, uniquingKeysWith: { a, _ in a })
-        for entry in items.values where !entry.deleted {
-            // The file itself says what is in it. The index may be behind: a device that was cut
-            // off after an upload never got to write it down.
-            if let file = entry.file, let md5 = actual[file] { entry.d["md5"] = md5 }
+            let actual = Dictionary(inFolder.compactMap { f in f.md5.map { (f.id, $0) } }, uniquingKeysWith: { a, _ in a })
+            for entry in items.values where !entry.deleted {
+                // The file itself says what is in it. The index may be behind: a device that was
+                // cut off after an upload never got to write it down.
+                if let file = entry.file, let md5 = actual[file] { entry.d["md5"] = md5 }
+            }
+            // The same for the list of blobs: those that are gone are forgotten, and those that
+            // are there unlisted (uploaded before the index kept this list) are taken up.
+            names = names.filter { live.contains($0.value) }
+            for f in inFolder where f.name.hasPrefix("blob-") && names[f.name] == nil { names[f.name] = f.id }
+            state["checked"] = Date().timeIntervalSince1970
         }
         /// The index as this sync has it now.
         func index() -> [String: Any] {
             var out = cloud
             out["items"] = items.mapValues { $0.d }
+            out["blobs"] = names
             return out
         }
-        var read = cloud          // the index as it was read, to tell later what others changed
+        var read = read0
+        var mended = !(index() as NSDictionary).isEqual(read0)   // whether looking at Drive showed the index to be wrong
         var mineWas = index()     // and as this sync started out with it
         var sent = Set<String>()  // ids of the notebooks this sync uploaded
         var savedAt = Date()
@@ -450,17 +544,21 @@ enum LibrarySync {
         /// Write the index. It is read again first: whatever another device changed in it while
         /// this sync was running is kept, wherever this sync did not change the same thing.
         func publish() async throws {
-            if indexID != nil, same(index(), mineWas) { return }   // nothing to write down
+            if indexID != nil, !mended, same(index(), mineWas) {
+                state["index"] = indexID   // found, if not written: remembered all the same
+                return   // nothing to write down
+            }
             if indexID == nil { indexID = try await drive.find(indexName, parent: rootID) }
             var latest: [String: Any] = [:]
             if let indexID { latest = try await drive.getJSON(indexID) }
             var out = index()
-            for part in ["items", "folders"] {
+            for part in ["items", "folders", "blobs"] {
                 var ours = out[part] as? [String: Any] ?? [:]
                 let was = read[part] as? [String: Any] ?? [:], began = mineWas[part] as? [String: Any] ?? [:]
                 for (key, value) in latest[part] as? [String: Any] ?? [:] where !same(value, was[key]) && same(ours[key], began[key]) {
                     ours[key] = value
                     if part == "items" { items[key] = Ref(value as? [String: Any] ?? [:]) }
+                    if part == "blobs", let id = value as? String { names[key] = id }
                 }
                 out[part] = ours
             }
@@ -470,6 +568,7 @@ enum LibrarySync {
             cloud = out
             read = out
             mineWas = out
+            mended = false
         }
 
         func abspath(_ rel: String) -> URL {
@@ -486,10 +585,25 @@ enum LibrarySync {
         let trashNames = ((try? fm.contentsOfDirectory(atPath: trashDir.path)) ?? []).filter { $0.hasSuffix(notebookExt) }.sorted()
         found += trashNames.map { Local(url: trashDir.appendingPathComponent($0), rel: $0, inTrash: true) }
         let onlyPaths = only.map { Set($0.map { $0.standardizedFileURL.path }) }
+        // A notebook that has not been written since the last sync is known by its place: it is
+        // not opened to be asked who it is. This device's record of the last sync is the list of
+        // what has been edited: whatever is not in it as it is now.
+        var sameAs: [String: (String, String?)] = [:]
+        for (nid, e) in known {
+            sameAs["\(e["trashed"] as? Bool ?? false)/\(e["path"] as? String ?? "")"] = (nid, e["stat"] as? String)
+        }
+        var unwritten = Set<String>()
         for entry in found {
             var here = entry
             if let onlyPaths, !onlyPaths.contains(here.url.standardizedFileURL.path) { continue }
-            guard var nid = try? Notebook.id(of: here.url) else { continue }   // not a readable notebook; leave it alone
+            var nid: String
+            if let (was, stat) = sameAs["\(here.inTrash)/\(here.rel)"], let stat, stat == fileSign(here.url), local[was] == nil {
+                nid = was
+                unwritten.insert(nid)
+            } else {
+                guard let asked = try? Notebook.id(of: here.url) else { continue }   // not a readable notebook; leave it alone
+                nid = asked
+            }
             if skipPaths.contains(here.url.standardizedFileURL.path) {
                 skipIDs.insert(nid)
                 continue
@@ -505,6 +619,7 @@ enum LibrarySync {
                 nid = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
                 try Notebook.setID(here.url, nid)
             }
+            if local[nid] != nil { unwritten.remove(nid) }   // two files with one id: both are looked at
             local[nid] = here
         }
 
@@ -520,11 +635,14 @@ enum LibrarySync {
             local[nid] = Local(url: target, rel: inTrash ? target.lastPathComponent : relPath(target, root), inTrash: inTrash)
         }
 
-        /// (checksum, fileSign()) of a notebook here. The checksum is the remembered one while the
-        /// file has not been written since: a large notebook is not read through at every sync.
+        /// (what stands for the content, fileSign()) of a notebook here. No notebook is read
+        /// through for this: one that has not been written since the last sync is what it was
+        /// then, and one that has been written is another. (Only a record from before the time
+        /// of writing was kept gives nothing to go by; then the checksum is worked out, once.)
         func localMD5(_ nid: String, _ url: URL) throws -> (String, String) {
             let was = known[nid], stat = fileSign(url) ?? ""
             if let sum = was?["local"] as? String, !sum.isEmpty, was?["stat"] as? String == stat { return (sum, stat) }
+            if let before = was?["stat"] as? String, !before.isEmpty { return ("written " + stat, stat) }
             return (try md5(url), stat)
         }
 
@@ -532,17 +650,25 @@ enum LibrarySync {
         func push(_ nid: String, _ entry: Ref) async throws {
             let here = local[nid]!
             let slimmed = workDir.appendingPathComponent("upload")
-            let (mine, stat, blobs) = try slim(here.url, to: slimmed) { names[$0] != nil }
+            let (stat, blobs, found) = try slim(here.url, to: slimmed, seen: known[nid]?["blobs"] as? [String: Any]) { names[$0] != nil }
+            blobsSeen[nid] = found
             for (name, part) in blobs.sorted(by: { $0.key < $1.key }) {
                 // Each of these is uploaded once, whatever is written in the notebook afterwards.
-                names[name] = try await drive.upload(part, name: name, parent: rootID, fileID: nil).0
+                let (blobID, arrived) = try await drive.upload(part, name: name, parent: rootID, fileID: nil)
+                if let arrived, try arrived != md5(part) {
+                    throw DriveError(tr("上传的 PDF 或图片在云端的校验值不对，请再同步一次"))   // and it is not listed
+                }
+                names[name] = blobID
                 try? fm.removeItem(at: part)
             }
             let (fileID, sum) = try await drive.upload(slimmed, name: (here.rel as NSString).lastPathComponent,
                                                        parent: rootID, fileID: entry.file)
-            let theirs = try sum ?? md5(slimmed)
+            // What arrived is what was sent: only then is it written down in the index.
+            let sentSum = try md5(slimmed)
+            if let sum, sum != sentSum { throw DriveError(tr("上传的笔记本在云端的校验值不对，请再同步一次")) }
+            let theirs = sum ?? sentSum
             try? fm.removeItem(at: slimmed)
-            agreed[nid] = (mine, stat)
+            agreed[nid] = ("written " + stat, stat)
             cloud["format"] = format
             entry.d["file"] = fileID
             entry.d["md5"] = theirs
@@ -567,6 +693,11 @@ enum LibrarySync {
                 let localSame = baseLocal != nil && mine == baseLocal
                 let cloudSame = base != nil && entry.md5 == base
                 if mine == entry.md5 || (localSame && cloudSame) {
+                    let listed = (before?["blobs"] as? [String: Any] ?? [:]).values.compactMap { ($0 as? [Any])?.last as? String }
+                    if thorough, listed.contains(where: { names[$0] == nil }) {
+                        try await push(nid, entry)   // a PDF or picture of it is gone from Drive: it is sent again
+                        return
+                    }
                     if agreed[nid] == nil { agreed[nid] = (mine, stat) }
                     return
                 }
@@ -575,9 +706,12 @@ enum LibrarySync {
                     return
                 }
                 if cloudSame {
-                    // Only this device has changed it, as far as was known when the sync began.
-                    // Another may have sent its own version since; uploading now would wipe that out.
-                    let now = try await drive.md5(file)
+                    // Only this device has changed it, as far as the index says. A thorough sync
+                    // asks Drive once more, in case another device sent its version this very
+                    // moment; a quick one takes the index at its word. (Should two devices cross
+                    // all the same, nothing is lost: the one written over sees at its next sync
+                    // that the cloud's version is not its own, and merges its edits back in.)
+                    let now = thorough ? try await drive.md5(file) : nil
                     if now == nil || now == base {
                         try await push(nid, entry)
                         return
@@ -585,10 +719,11 @@ enum LibrarySync {
                     entry.d["md5"] = now
                     continue
                 }
-                let theirs = path.appendingPathExtension("theirs")
+                // Aside, so that nothing half done is left by the notebook.
+                let theirs = workDir.appendingPathComponent("theirs")
                 try await drive.download(file, to: theirs)
                 entry.d["md5"] = try md5(theirs)
-                try await fatten(theirs, have: path, fetch: fetch)
+                try await fatten(theirs, have: path, seen: known[nid]?["blobs"] as? [String: Any], fetch: fetch)
                 let taken: Bool = try fileLock.withLock {
                     let untouched = localSame && fileSign(path) == stat
                     var replace = untouched && !mineSent   // nothing here that the cloud's version lacks
@@ -624,9 +759,9 @@ enum LibrarySync {
                         }
                     }
                     if replace {
-                        let sum = try md5(theirs)
                         _ = try fm.replaceItemAt(path, withItemAt: theirs)
-                        agreed[nid] = (sum, fileSign(path) ?? "")
+                        let stat = fileSign(path) ?? ""
+                        agreed[nid] = ("written " + stat, stat)
                         summary.down += 1
                     }
                     return replace
@@ -642,6 +777,7 @@ enum LibrarySync {
 
         let ids = only == nil ? Set(local.keys).union(items.keys).union(known.keys).sorted() : local.keys.sorted()
         let steps = Double(ids.count + 2)
+        var unmended: [(String, String)] = []   // notebooks here that lack their PDFs and could not be given them back
         for (n, nid) in ids.enumerated() {
             try Task.checkCancellation()
             let here = local[nid], before = known[nid]
@@ -653,6 +789,22 @@ enum LibrarySync {
                 if total > 0 { report((Double(n + 1) + Double(got) / Double(total)) / steps, name) }
             }
             if skipIDs.contains(nid) { continue }
+            if let here, !unwritten.contains(nid), stripped(here.url) {
+                // A notebook here without its PDFs and pictures (see stripped). They are fetched
+                // and it is made whole before anything else is done with it; while that is not
+                // possible it is left exactly as it is, and above all not uploaded.
+                do {
+                    let mending = workDir.appendingPathComponent("mending")
+                    try? fm.removeItem(at: mending)
+                    try fm.copyItem(at: here.url, to: mending)
+                    try await fatten(mending, have: nil, fetch: fetch)
+                    try fileLock.withLock { _ = try fm.replaceItemAt(here.url, withItemAt: mending) }
+                    summary.mended += 1
+                } catch let error as DriveError {
+                    unmended.append((name, error.message))
+                    continue
+                }
+            }
             let beforeMD5 = before?["md5"] as? String
             if here == nil && entry == nil {
                 known[nid] = nil
@@ -683,9 +835,14 @@ enum LibrarySync {
                 var target = entry.trashed ? trashDir.appendingPathComponent((path as NSString).lastPathComponent) : abspath(path)
                 try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 target = unique(target)
-                try await drive.download(file, to: target)
-                try await fatten(target, have: nil, fetch: fetch)
-                agreed[nid] = (try md5(target), fileSign(target) ?? "")
+                // Put together aside, and moved into the library only when it is whole: a download
+                // that is cut off leaves nothing there.
+                let coming = workDir.appendingPathComponent("coming")
+                try await drive.download(file, to: coming)
+                try await fatten(coming, have: nil, fetch: fetch)
+                try fm.moveItem(at: coming, to: target)
+                let stat = fileSign(target) ?? ""
+                agreed[nid] = ("written " + stat, stat)
                 local[nid] = Local(url: target, rel: entry.trashed ? target.lastPathComponent : relPath(target, root), inTrash: entry.trashed)
                 summary.down += 1
             } else if let here, let entry {
@@ -735,6 +892,11 @@ enum LibrarySync {
                 known[nid]?["stat"] = stat
             } else if let sum = was?["local"] as? String, was?["md5"] as? String == entry.md5 {
                 known[nid]?["local"] = sum
+            }
+            if let found = blobsSeen[nid] {
+                known[nid]?["blobs"] = found
+            } else if let found = was?["blobs"] {
+                known[nid]?["blobs"] = found
             }
             if sent.contains(nid) || (was?["sent"] as? Bool == true && was?["md5"] as? String == entry.md5) {
                 known[nid]?["sent"] = true   // the cloud's version is the one this device wrote
@@ -807,6 +969,9 @@ enum LibrarySync {
         state["last"] = now()
         try saveJSON(statePath, state)
         report(1, "")
+        if let (name, why) = unmended.first {
+            throw DriveError(trf("“%s”缺少它的 PDF 或图片，暂时无法补全：%s", name, why))
+        }
         return summary
     }
 }

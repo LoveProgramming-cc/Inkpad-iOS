@@ -29,7 +29,8 @@ final class FakeDrive: DriveAPI {
     }
 
     func getJSON(_ fileID: String) async throws -> [String: Any] {
-        let out = try JSONSerialization.jsonObject(with: cloud.files[fileID]!.data) as! [String: Any]
+        guard let file = cloud.files[fileID] else { throw DriveError("not found", code: 404) }
+        let out = try JSONSerialization.jsonObject(with: file.data) as! [String: Any]
         if let then = afterIndex {
             afterIndex = nil
             try await then()
@@ -55,7 +56,8 @@ final class FakeDrive: DriveAPI {
     }
 
     func download(_ fileID: String, to dest: URL) async throws {
-        try cloud.files[fileID]!.data.write(to: dest, options: .atomic)
+        guard let file = cloud.files[fileID] else { throw DriveError("not found", code: 404) }
+        try file.data.write(to: dest, options: .atomic)
         downloads += 1
     }
 
@@ -244,13 +246,16 @@ final class SyncTests: XCTestCase {
         let file = ((index["items"] as! [String: Any])[nid] as! [String: Any])["file"] as! String
         cloud.files[file] = nil
 
+        // A quick sync goes by the index and does not look; a thorough one finds out.
+        let quick = try await sync(b)
+        XCTAssertEqual(quick, SyncSummary())
         let drive = FakeDrive(cloud)
-        let s = try await LibrarySync.sync(root: b, drive: drive)
+        let s = try await LibrarySync.sync(root: b, drive: drive, thorough: true)
         XCTAssertEqual(s.up, 1)
         XCTAssertEqual(s.removed, 0, "not taken for a deletion")
         XCTAssertEqual(books(b), ["数学.inkpad"])
         let s2 = try await sync(a)
-        XCTAssertEqual(s2.up + s2.down + s2.removed, 0)
+        XCTAssertEqual(s2.up + s2.removed, 0)
         XCTAssertEqual(books(a), ["数学.inkpad"])
     }
 
@@ -520,6 +525,98 @@ final class SyncTests: XCTestCase {
             XCTAssertTrue(now.pages[2].pdf === now.pages[3].pdf)
         }
         XCTAssertEqual(cloud.files.filter { $0.value.name.hasPrefix("blob-") }.count, pdf.count >= LibrarySync.blobMin ? 1 : 0)
+    }
+
+    /// A notebook left in the library without its PDFs and pictures (a download that was cut
+    /// off, or an earlier version's doing) is made whole from the cloud, and never uploaded
+    /// as it is.
+    func testNotebookWithoutItsPicturesIsMended() async throws {
+        let was = LibrarySync.blobMin
+        LibrarySync.blobMin = 16
+        defer { LibrarySync.blobMin = was }
+        let note = a.appendingPathComponent("带图.inkpad")
+        try ModelTests().sampleDocument().save(to: note)
+        let picture = try ZipReader(url: note).read("img/0.png")
+        try await sync(a)
+        try await sync(b)
+        let theirs = b.appendingPathComponent("带图.inkpad")
+        // What is on Drive for it is the notebook without the picture; put that in its place.
+        let uploaded = cloud.files.first { $0.value.name == "带图.inkpad" }!.value.data
+        try uploaded.write(to: theirs)
+        XCTAssertTrue(LibrarySync.stripped(theirs))
+        XCTAssertThrowsError(try Document.load(theirs).snapshot().images.count == 1 ? () : { throw ZipError("no picture") }())
+
+        let drive = FakeDrive(cloud)
+        let s = try await LibrarySync.sync(root: b, drive: drive)
+        XCTAssertEqual(s.mended, 1)
+        XCTAssertFalse(LibrarySync.stripped(theirs))
+        XCTAssertEqual(try ZipReader(url: theirs).read("img/0.png"), picture)
+        XCTAssertFalse(LibrarySync.stripped(note))
+        let now = cloud.files.first { $0.value.name == "带图.inkpad" }!.value.data
+
+        // With the picture gone from the cloud too it cannot be mended: it is left alone, the
+        // sync says so, and what is in the cloud is not replaced by it.
+        try now.write(to: theirs)
+        for id in cloud.files.filter({ $0.value.name.hasPrefix("blob-") }).keys { cloud.files[id] = nil }
+        do {
+            _ = try await LibrarySync.sync(root: b, drive: FakeDrive(cloud), thorough: true)
+            XCTFail("should have said that it could not be completed")
+        } catch let error as DriveError {
+            XCTAssertTrue(error.message.contains("带图"), error.message)
+        }
+        XCTAssertEqual(cloud.files.first { $0.value.name == "带图.inkpad" }!.value.data, now)
+        // The device that has it whole (and sent it) puts the picture back when it next looks
+        // at Drive, and then the other is mended.
+        try await sync(a)
+        _ = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud), thorough: true)
+        XCTAssertEqual(cloud.files.filter { $0.value.name.hasPrefix("blob-sha256-") }.count, 1)
+        let again = try await sync(b)
+        XCTAssertEqual(again.mended, 1)
+        XCTAssertEqual(try ZipReader(url: theirs).read("img/0.png"), picture)
+    }
+
+    /// A quick sync with nothing to do reads the index and no more.
+    func testQuickSyncIsOneRequest() async throws {
+        final class Counting: DriveAPI {
+            let inner: FakeDrive
+            var calls: [String] = []
+            init(_ inner: FakeDrive) { self.inner = inner }
+            var onBytes: ((Int64, Int64) -> Void)?
+            func root() async throws -> String { calls.append("root"); return try await inner.root() }
+            func find(_ name: String, parent: String) async throws -> String? { calls.append("find"); return try await inner.find(name, parent: parent) }
+            func getJSON(_ fileID: String) async throws -> [String: Any] { calls.append("getJSON"); return try await inner.getJSON(fileID) }
+            func putJSON(_ name: String, _ value: [String: Any], parent: String, fileID: String?) async throws -> String {
+                calls.append("putJSON")
+                return try await inner.putJSON(name, value, parent: parent, fileID: fileID)
+            }
+            func rename(_ fileID: String, _ name: String) async throws { calls.append("rename"); try await inner.rename(fileID, name) }
+            func upload(_ url: URL, name: String, parent: String, fileID: String?) async throws -> (String, String?) {
+                calls.append("upload")
+                return try await inner.upload(url, name: name, parent: parent, fileID: fileID)
+            }
+            func download(_ fileID: String, to dest: URL) async throws { calls.append("download"); try await inner.download(fileID, to: dest) }
+            func children(_ parent: String) async throws -> [DriveFile] { calls.append("children"); return try await inner.children(parent) }
+            func alive(_ fileID: String) async throws -> Bool { calls.append("alive"); return try await inner.alive(fileID) }
+            func md5(_ fileID: String) async throws -> String? { calls.append("md5"); return try await inner.md5(fileID) }
+        }
+        let store = Store(root: a)
+        let note = try store.newNotebook(store.root, PageTemplate(), name: "一")
+        _ = try store.newNotebook(store.root, PageTemplate(), name: "二")
+        try await sync(a)
+        var drive = Counting(FakeDrive(cloud))
+        var s = try await LibrarySync.sync(root: a, drive: drive)
+        XCTAssertEqual(s, SyncSummary())
+        XCTAssertEqual(drive.calls, ["getJSON"])
+        // Writing in one sends that one: the index is read, the notebook uploaded, the index
+        // read again and written.
+        _ = try addStroke(note, x: 1)
+        drive = Counting(FakeDrive(cloud))
+        s = try await LibrarySync.sync(root: a, drive: drive)
+        XCTAssertEqual(s.up, 1)
+        XCTAssertEqual(drive.calls, ["getJSON", "upload", "getJSON", "putJSON"])
+        drive = Counting(FakeDrive(cloud))
+        _ = try await LibrarySync.sync(root: a, drive: drive, thorough: true)
+        XCTAssertEqual(drive.calls, ["alive", "children", "getJSON"])
     }
 
     func testSkippedNotebookIsLeftAlone() async throws {

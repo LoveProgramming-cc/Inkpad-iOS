@@ -40,8 +40,9 @@ struct PageTemplate: Equatable {
 /// An embedded PDF whose pages serve as backgrounds.
 final class PdfDoc {
     let data: Data
-    /// What two copies of the same PDF have in common. A notebook holds a PDF once however many
-    /// times it was imported into it, or came into it with pages merged from another device.
+    /// Something two copies of the same PDF have in common, for finding them quickly; whether
+    /// they are the same is settled by comparing their bytes. A notebook holds a PDF once however
+    /// many times it was imported into it, or came into it with pages merged from another device.
     lazy var key = "\(data.count)/\(ZipWriter.crc(data))"
     let nPages: Int
     private let doc: PDFDocument

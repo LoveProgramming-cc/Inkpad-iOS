@@ -209,6 +209,7 @@ final class AppModel: ObservableObject {
 
     private var toastTimer: Timer?
     private var syncTask: Task<Void, Never>?
+    private var syncChecked = false                    // whether a thorough sync has run since the app started
     private var syncNext: (quiet: Bool, only: Bool)?   // a sync asked for while one was running
     private var editTimer: Timer?                      // runs out a moment after the last stroke
     private var watchTimer: Timer?
@@ -389,6 +390,10 @@ final class AppModel: ObservableObject {
         let root = store.root
         if let session, session.canvas.op == nil { session.save(wait: true) }
         let which = only ? session.map { [$0.url] } : nil
+        // Thorough when the user asks for a sync, and once when the app has started; quick
+        // otherwise (the sync decides for itself when it is time to look again).
+        let thorough: Bool? = !quiet || !syncChecked ? true : nil
+        if !only { syncChecked = true }
         let background = UIApplication.shared.beginBackgroundTask(withName: "sync") { [weak self] in self?.syncTask?.cancel() }
         let pace = Pace()
         syncTask = Task {
@@ -396,7 +401,7 @@ final class AppModel: ObservableObject {
             var failure: String?
             do {
                 summary = try await Task.detached(priority: .utility) {
-                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), only: which, folder: GoogleAccount.folderID) { fraction, text in
+                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), only: which, folder: GoogleAccount.folderID, thorough: thorough) { fraction, text in
                         // A transfer reports every few kilobytes; the screen need not hear of each.
                         guard pace.due(fraction) else { return }
                         Task { @MainActor in
