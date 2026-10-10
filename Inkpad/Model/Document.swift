@@ -60,6 +60,28 @@ final class Document {
     var id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()   // stable across renames and moves; what sync tracks
     var gonePages = Set<String>()         // ids of pages removed from the document
     var coverSpec: (String, RGB)?         // (style, colour) of a designed cover; nil shows the first page
+    var orderMT = 0.0                     // when the pages were last put in another order
+    var orderSeen: [String]?              // ...and the order they were in when that was last looked at
+
+    /// Note the time on the settings of every page that has changed them, and on the order of
+    /// the pages if that has changed, since this was last done. When two versions of a
+    /// notebook are merged, the later change is the one that stays.
+    func stamp() {
+        let now = Date().timeIntervalSince1970
+        for page in pages {
+            let sign = page.sign
+            if sign != page.seen {
+                page.mt = now
+                page.seen = sign
+            }
+        }
+        let ids = pages.map(\.id)
+        if let before = orderSeen, before != ids {
+            let here = Set(ids), was = Set(before)
+            if before.filter({ here.contains($0) }) != ids.filter({ was.contains($0) }) { orderMT = now }
+        }
+        orderSeen = ids
+    }
 
     init(template: PageTemplate? = nil) {
         pages = [template.map { Page(template: $0) } ?? Page()]
@@ -266,6 +288,7 @@ final class Document {
     // and leave tombstones so that two versions of a notebook can be merged item by item.
 
     func snapshot() -> Snapshot {
+        stamp()
         let ctx = SaveCtx()
         var pdfs: [PdfDoc] = []
         var list: [[String: Any]] = []
@@ -274,7 +297,7 @@ final class Document {
             var d: [String: Any] = ["id": page.id, "w": page.w, "h": page.h, "paper": page.paper, "color": page.color.list]
             if page.board { d["board"] = true }
             if let pdf = page.pdf {
-                var n = pdfs.firstIndex { $0 === pdf }
+                var n = pdfs.firstIndex { $0 === pdf || $0.key == pdf.key }
                 if n == nil {
                     pdfs.append(pdf)
                     n = pdfs.count - 1
@@ -285,6 +308,7 @@ final class Document {
             }
             if page.bookmark { d["bookmark"] = true }
             if let outline = page.outline, !outline.isEmpty { d["outline"] = outline }
+            if page.mt != 0 { d["mt"] = page.mt }
             list.append(d)
             let hasImage = page.items.contains { $0.kind == "i" }
             if page.blob == nil || page.blob!.rev != page.rev || hasImage {
@@ -303,6 +327,7 @@ final class Document {
         var meta: [String: Any] = ["format": "inkpad", "version": 3, "pages": list, "id": id,
                                    "gone": Array(gonePages.sorted().suffix(goneLimit))]
         if let coverSpec { meta["cover"] = [coverSpec.0, coverSpec.1.list] as [Any] }
+        if orderMT != 0 { meta["order_mt"] = orderMT }
         let json = (try? JSONSerialization.data(withJSONObject: meta)) ?? Data()
         return Snapshot(json: json, pages: blobs, pdfs: pdfs.map(\.data), images: ctx.images.map(\.data),
                         cover: cover(), rev: rev, id: id)
@@ -348,10 +373,23 @@ final class Document {
         let z = try ZipReader(url: url)
         guard let meta = try JSONSerialization.jsonObject(with: z.read("document.json")) as? [String: Any],
               meta["format"] as? String == "inkpad" else { throw ZipError(tr("不是 Inkpad 文档")) }
-        var pdfs: [PdfDoc] = []
-        while z.has("pdf/\(pdfs.count).pdf") { pdfs.append(try PdfDoc(z.read("pdf/\(pdfs.count).pdf"))) }
-        var images: [ImageData] = []
-        while z.has("img/\(images.count).png") { images.append(ImageData(try z.read("img/\(images.count).png"))) }
+        // The same PDF or picture stored twice is read once, and so saved once from then on.
+        var pdfs: [PdfDoc] = [], samePDF: [String: PdfDoc] = [:]
+        while let e = z.entry("pdf/\(pdfs.count).pdf") {
+            let key = "\(e.size)/\(e.crc)"
+            if samePDF[key] == nil {
+                let pdf = try PdfDoc(z.read(e.name))
+                pdf.key = key
+                samePDF[key] = pdf
+            }
+            pdfs.append(samePDF[key]!)
+        }
+        var images: [ImageData] = [], sameImage: [String: ImageData] = [:]
+        while let e = z.entry("img/\(images.count).png") {
+            let key = "\(e.size)/\(e.crc)"
+            if sameImage[key] == nil { sameImage[key] = ImageData(try z.read(e.name)) }
+            images.append(sameImage[key]!)
+        }
         let doc = Document()
         doc.id = meta["id"] as? String ?? doc.id
         doc.pages = []
@@ -380,10 +418,14 @@ final class Document {
                 page.items.append(item)
             }
             page.gone = Set(content["gone"] as? [String] ?? [])
+            page.mt = num(d["mt"])
+            page.seen = page.sign
             doc.pages.append(page)
         }
         if doc.pages.isEmpty { doc.pages = [Page()] }
         doc.gonePages = Set(meta["gone"] as? [String] ?? [])
+        doc.orderMT = num(meta["order_mt"])
+        doc.orderSeen = doc.pages.map(\.id)
         doc.url = url
         if let cover = meta["cover"] as? [Any], !cover.isEmpty {
             // Older files stored a bare colour.
@@ -406,36 +448,49 @@ final class Document {
 /// Fold another version of the same notebook into mine, item by item.
 ///
 /// A page or an item that either side removed stays removed; everything else that either
-/// side has is kept. Where both have a page, its settings are mine. Returns what changed
-/// in mine: (pages added, pages removed, items added, items removed).
+/// side has is kept. A page's settings (paper, background, bookmark...) are those of the
+/// side that changed them last, and so is the order of the pages. Returns what changed in
+/// mine: (pages added, pages removed, items added, items removed, settings taken over).
 @discardableResult
-func merge(_ mine: Document, _ theirs: Document) -> (Int, Int, Int, Int) {
+func merge(_ mine: Document, _ theirs: Document) -> (Int, Int, Int, Int, Int) {
+    mine.stamp()
+    theirs.stamp()
     let gonePages = mine.gonePages.union(theirs.gonePages)
-    var counts = (0, 0, 0, 0)
-    var byID = Dictionary(mine.pages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-    // Their new pages go after the page they follow on their side.
+    var counts = (0, 0, 0, 0, 0)
+    let byID = Dictionary(mine.pages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let other = Dictionary(theirs.pages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    // The pages are in the order of the side that arranged them last. A page only the other
+    // side has goes after the page it follows there.
+    let (lead, follow) = theirs.orderMT > mine.orderMT ? (theirs, mine) : (mine, theirs)
+    var order = lead.pages.map(\.id)
+    var have = Set(order)
     var previous: String?
-    for page in theirs.pages {
-        if byID[page.id] != nil {
-            previous = page.id
-            continue
-        }
-        if !gonePages.contains(page.id) {
-            let at = mine.pages.firstIndex { $0.id == previous }.map { $0 + 1 } ?? mine.pages.count
-            mine.pages.insert(page, at: at)
-            byID[page.id] = page
-            counts.0 += 1
+    for page in follow.pages {
+        if !have.contains(page.id) {
+            let at = previous.flatMap { order.firstIndex(of: $0) }.map { $0 + 1 } ?? order.count
+            order.insert(page.id, at: at)
+            have.insert(page.id)
         }
         previous = page.id
     }
-    let before = mine.pages.count
-    let kept = mine.pages.filter { !gonePages.contains($0.id) }
-    mine.pages = kept.isEmpty ? Array(mine.pages.prefix(1)) : kept
-    counts.1 = before - mine.pages.count
-    let other = Dictionary(theirs.pages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let pages = order.filter { !gonePages.contains($0) }.compactMap { byID[$0] ?? other[$0] }
+    let was = mine.pages.map(\.id)
+    counts.0 = pages.filter { byID[$0.id] == nil }.count
+    mine.pages = pages.isEmpty ? Array(mine.pages.prefix(1)) : pages
+    let now = Set(mine.pages.map(\.id))
+    counts.1 = was.filter { !now.contains($0) }.count
+    if was.filter({ now.contains($0) }) != mine.pages.map(\.id).filter({ byID[$0] != nil }) { counts.4 += 1 }
+    mine.orderMT = max(mine.orderMT, theirs.orderMT)
+    mine.orderSeen = mine.pages.map(\.id)
     var changed = false
+    var restyled: [Page] = []
     for page in mine.pages {
         guard let their = other[page.id], their !== page else { continue }
+        if their.mt > page.mt {
+            page.takeSettings(of: their)
+            restyled.append(page)
+            counts.4 += 1
+        }
         let gone = page.gone.union(their.gone)
         let have = Set(page.items.map(\.id))
         let new = their.items.filter { !have.contains($0.id) && !gone.contains($0.id) }
@@ -449,11 +504,12 @@ func merge(_ mine: Document, _ theirs: Document) -> (Int, Int, Int, Int) {
             changed = true
         }
     }
-    if changed || gonePages != mine.gonePages || counts != (0, 0, 0, 0) {
+    if changed || gonePages != mine.gonePages || counts != (0, 0, 0, 0, 0) {
         mine.gonePages = gonePages
         mine.clearHistory()
         mine.rev += 1
         mine.emit(.pages)
+        for page in restyled { mine.emit(.dirty(page, nil)) }
     }
     return counts
 }

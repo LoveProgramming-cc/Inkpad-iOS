@@ -126,7 +126,7 @@ enum LibrarySync {
         return text
     }
 
-    static var blobMin = 256 * 1024     // a PDF or picture at least this big is kept on Drive as a file of its own
+    static var blobMin = 32 * 1024      // a PDF or picture at least this big is kept on Drive as a file of its own
     static let blobsName = "blobs.json"   // in an uploaded notebook: {name in the zip: name of the file on Drive}
     static let format = 2                 // of the index; 2 is the one in which notebooks are uploaded without their blobs
 
@@ -599,7 +599,7 @@ enum LibrarySync {
                                 // The cloud's version ought to be a later one of what this device sent.
                                 // If another device wrote over that without having seen it, it is not;
                                 // then what was written here is put back into it.
-                                if merge(theirDoc, hereDoc) == (0, 0, 0, 0) {
+                                if merge(theirDoc, hereDoc) == (0, 0, 0, 0, 0) {
                                     replace = true
                                 } else {
                                     try theirDoc.save(to: path)

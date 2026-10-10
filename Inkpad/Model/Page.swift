@@ -40,6 +40,9 @@ struct PageTemplate: Equatable {
 /// An embedded PDF whose pages serve as backgrounds.
 final class PdfDoc {
     let data: Data
+    /// What two copies of the same PDF have in common. A notebook holds a PDF once however many
+    /// times it was imported into it, or came into it with pages merged from another device.
+    lazy var key = "\(data.count)/\(ZipWriter.crc(data))"
     let nPages: Int
     private let doc: PDFDocument
     private var sizes: [Int: (Double, Double)] = [:]
@@ -107,6 +110,20 @@ final class Page {
     var bookmark = false
     var outline: String?        // outline title, if the page is in the outline
     var items: [Item] = []
+    var mt = 0.0                // when the settings above were last changed, for merging two versions
+    var seen: String?           // ...and what they were when that was last looked at
+
+    /// The page's settings: what is kept in document.json about it, apart from what is drawn on it.
+    var sign: String {
+        "\(w)/\(h)/\(paper)/\(color.list)/\(board)/\(pdf?.key ?? "-")/\(pdfPage)/\(rot)/\(bookmark)/\(outline ?? "")"
+    }
+
+    func takeSettings(of other: Page) {
+        w = other.w; h = other.h; paper = other.paper; color = other.color; board = other.board
+        pdf = other.pdf; pdfPage = other.pdfPage; rot = other.rot; bookmark = other.bookmark; outline = other.outline
+        mt = other.mt
+        seen = sign
+    }
 
     init(_ w: Double = 595, _ h: Double = 842, paper: String = "blank", pdf: PdfDoc? = nil, pdfPage: Int = 0,
          color: RGB = .white, board: Bool = false) {

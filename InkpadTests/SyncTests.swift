@@ -480,6 +480,48 @@ final class SyncTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: a.appendingPathComponent(".sync").path))
     }
 
+    /// One device moves a page, changes a page's paper and appends a PDF that the notebook
+    /// has already; the other writes meanwhile. All of it is there afterwards, on both.
+    func testOrderPaperAndPDFsSurviveAMerge() async throws {
+        let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData { ctx in
+            ctx.beginPage()
+            UIColor.red.setFill()
+            UIBezierPath(rect: CGRect(x: 20, y: 20, width: 100, height: 100)).fill()
+        }
+        let note = a.appendingPathComponent("课本.inkpad")
+        let made = try Document.fromPDF(pdf)
+        made.perform(.pages(removed: [], added: [(1, Page()), (2, Page())]))
+        try made.save(to: note)
+        try await sync(a)
+        try await sync(b)
+        let theirs = b.appendingPathComponent("课本.inkpad")
+
+        let doc = try Document.load(note)
+        let ids = doc.pages.map(\.id)
+        let first = doc.pages[0]
+        doc.perform(.pages(removed: [(0, first)], added: [(2, first)]))
+        doc.perform(.template(doc.pages[0], old: doc.pages[0].template, new: PageTemplate(paper: "grid")))
+        doc.perform(.pages(removed: [], added: try Document.pdfPages(pdf).enumerated().map { ($0.offset + 3, $0.element) }))
+        try doc.save()
+        XCTAssertEqual(try ZipReader(url: note).names.filter { $0.hasPrefix("pdf/") }, ["pdf/0.pdf"], "the same PDF is kept once")
+        _ = try addStroke(theirs, x: 77)   // on the PDF page, which is first over there
+
+        try await sync(a)
+        let s = try await sync(b)
+        XCTAssertEqual(s.merged, 1)
+        try await sync(a)
+        for url in [note, theirs] {
+            let now = try Document.load(url)
+            XCTAssertEqual(Array(now.pages.map(\.id).prefix(3)), [ids[1], ids[2], ids[0]], url.path)
+            XCTAssertEqual(now.pages.count, 4)
+            XCTAssertEqual(now.pages[0].paper, "grid")
+            XCTAssertEqual(now.pages[2].items.count, 1, "what was written while the page was being moved")
+            XCTAssertNotNil(now.pages[2].pdf)
+            XCTAssertTrue(now.pages[2].pdf === now.pages[3].pdf)
+        }
+        XCTAssertEqual(cloud.files.filter { $0.value.name.hasPrefix("blob-") }.count, pdf.count >= LibrarySync.blobMin ? 1 : 0)
+    }
+
     func testSkippedNotebookIsLeftAlone() async throws {
         let store = Store(root: a)
         let note = try store.newNotebook(store.root, PageTemplate(), name: "编辑中")
