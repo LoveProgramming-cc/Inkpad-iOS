@@ -95,10 +95,12 @@ struct StatusPill: View {
 /// A button that opens a popover; the content gets a closure that closes it.
 struct PopButton<Label: View, Content: View>: View {
     var edge: Edge = .top
+    var tag = ""   // a name by which a test can have it open from the start
     @ViewBuilder var content: (_ close: @escaping () -> Void) -> Content
     @ViewBuilder var label: () -> Label
     @State private var open = false
     @State private var middle: CGFloat = 0   // where the button is, down the screen
+    @EnvironmentObject private var app: AppModel
 
     /// Low on the screen there is no room underneath: the popover opens upwards instead.
     private var side: Edge {
@@ -108,6 +110,13 @@ struct PopButton<Label: View, Content: View>: View {
     var body: some View {
         Button { open = true } label: { label() }
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).midY } action: { middle = $0 }
+            #if DEBUG
+            .task {
+                guard !tag.isEmpty, ProcessInfo.processInfo.environment["INKPAD_POP"] == tag else { return }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                open = true
+            }
+            #endif
             .popover(isPresented: $open, arrowEdge: side) {
                 // Opaque, like the desktop's popovers: nothing of the page shows through.
                 // Where there is not room for all of it, it scrolls.
@@ -118,6 +127,8 @@ struct PopButton<Label: View, Content: View>: View {
                 .foregroundStyle(Theme.ink)
                 .presentationBackground(Theme.popoverBg)
                 .presentationCompactAdaptation(.popover)
+                // On the Mac a popover is a window of its own and inherits nothing.
+                .environmentObject(app)
             }
     }
 }

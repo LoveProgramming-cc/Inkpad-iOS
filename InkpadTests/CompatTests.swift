@@ -59,6 +59,10 @@ final class CompatTests: XCTestCase {
             throw XCTSkip("set TEST_RUNNER_INKPAD_COMPAT to run the cross-implementation test")
         }
         let base = URL(fileURLWithPath: path)
+        // Small enough for the sample's picture to travel as a file of its own, as a large PDF does.
+        let was = LibrarySync.blobMin
+        LibrarySync.blobMin = 16
+        defer { LibrarySync.blobMin = was }
         let root = base.appendingPathComponent("ios"), cloud = base.appendingPathComponent("cloud")
         let fm = FileManager.default
         try fm.createDirectory(at: root, withIntermediateDirectories: true)

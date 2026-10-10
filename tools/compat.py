@@ -123,6 +123,7 @@ class DirDrive:
             dst.write(src.read())
 
 
+gdrive.BLOB_MIN = 16   # as in CompatTests.swift: the sample's picture travels as a file of its own
 root = os.path.join(base, 'desktop')
 os.makedirs(root, exist_ok=True)
 drive = DirDrive(os.path.join(base, 'cloud'))

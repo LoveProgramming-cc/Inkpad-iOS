@@ -493,7 +493,7 @@ struct LibraryView: View {
                 .frame(maxWidth: sizeClass == .compact ? .infinity : 220)
                 .frame(height: 34)
                 .background(Color.primary.opacity(0.08), in: Capsule())
-                PopButton { close in CloudPanel(close: close) } label: {
+                PopButton(tag: "cloud") { close in CloudPanel(close: close) } label: {
                     Icon(app.syncing ? "syncing" : "cloud")
                         .foregroundStyle(app.syncing ? Theme.accentText : app.syncError != nil ? Theme.danger : Color.primary)
                         .frame(width: 38, height: 34)

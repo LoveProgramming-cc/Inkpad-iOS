@@ -30,6 +30,8 @@ enum L10n {
     }()
 
     static let extraEN: [String: String] = [
+        "云端缺少这本笔记里的一个 PDF 或图片（%s）。请在仍有这本笔记的设备上同步一次。": "A PDF or picture of this notebook is missing from the cloud (%s). Please sync once on a device that still has the notebook.",
+        "云端的笔记是由更新版本的 Inkpad 同步的，请先更新这台设备上的 Inkpad": "The notes in the cloud were synced by a newer version of Inkpad; please update Inkpad on this device first",
         "“%s”在同步时一直被其它设备更改，请稍后再同步": "“%s” kept being changed by another device during the sync; please sync again later",
         "回到文稿库时自动同步。删除的笔记会进入废纸篓，两边都改过的会逐笔合并。":
             "Syncs whenever you return to the library. Deleted notes go to the trash; notes edited on both sides are merged stroke by stroke.",
@@ -72,6 +74,8 @@ enum L10n {
     ]
 
     static let extraJA: [String: String] = [
+        "云端缺少这本笔记里的一个 PDF 或图片（%s）。请在仍有这本笔记的设备上同步一次。": "このノートの PDF または画像がクラウドにありません（%s）。このノートが残っているデバイスで一度同期してください。",
+        "云端的笔记是由更新版本的 Inkpad 同步的，请先更新这台设备上的 Inkpad": "クラウドのノートは新しいバージョンの Inkpad で同期されています。先にこのデバイスの Inkpad を更新してください",
         "“%s”在同步时一直被其它设备更改，请稍后再同步": "「%s」は同期中に他のデバイスで変更され続けました。後でもう一度同期してください",
         "本机钥匙串": "このデバイスのキーチェーン", "“文件”App › 我的 iPhone › Inkpad": "「ファイル」App › この iPhone 内 › Inkpad", "收起": "折りたたむ", "展开": "展開",
         "捏一下 Apple Pencil Pro 弹出工具盘": "Apple Pencil Pro をスクイーズしてツールパレットを表示",

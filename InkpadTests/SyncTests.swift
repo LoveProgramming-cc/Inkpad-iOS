@@ -439,6 +439,47 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(try shape(b.appendingPathComponent("别的.inkpad")), [1])
     }
 
+    /// A notebook's PDFs and pictures are uploaded once, as files of their own; after that a
+    /// sync sends the ink only. The other device puts the notebook together again.
+    func testLargePartsAreUploadedOnce() async throws {
+        let was = LibrarySync.blobMin
+        LibrarySync.blobMin = 16
+        defer { LibrarySync.blobMin = was }
+        let note = a.appendingPathComponent("带图.inkpad")
+        try ModelTests().sampleDocument().save(to: note)
+        try ModelTests().sampleDocument().save(to: a.appendingPathComponent("同一张图.inkpad"))
+        let picture = try ZipReader(url: note).read("img/0.png")
+        try await sync(a)
+        let blobs = cloud.files.filter { $0.value.name.hasPrefix("blob-") }
+        XCTAssertEqual(blobs.count, 1, "the same picture in two notebooks is one file")
+        XCTAssertEqual(blobs.first?.value.data, picture)
+        let uploaded = cloud.files.first { $0.value.name == "带图.inkpad" }!.value.data
+        XCTAssertFalse(try ZipReader(data: uploaded).has("img/0.png"))
+
+        try await sync(b)
+        let theirs = b.appendingPathComponent("带图.inkpad")
+        XCTAssertEqual(try ZipReader(url: theirs).read("img/0.png"), picture)
+        XCTAssertEqual(try Document.load(theirs).pages[0].items.count, try Document.load(note).pages[0].items.count)
+
+        // Writing on both sides: merged, and the picture is neither sent nor fetched again.
+        let before = cloud.files.count
+        _ = try addStroke(note, x: 500)
+        _ = try addStroke(theirs, x: 510)
+        let driveA = FakeDrive(cloud), driveB = FakeDrive(cloud)
+        _ = try await LibrarySync.sync(root: a, drive: driveA)
+        let s = try await LibrarySync.sync(root: b, drive: driveB)
+        XCTAssertEqual(s.merged, 1)
+        _ = try await LibrarySync.sync(root: a, drive: driveA)
+        XCTAssertEqual(cloud.files.count, before)
+        XCTAssertEqual(driveA.uploads + driveB.uploads, 2)
+        XCTAssertEqual(driveA.downloads + driveB.downloads, 2)
+        XCTAssertEqual(try ZipReader(url: note).read("img/0.png"), picture)
+        XCTAssertEqual(try Document.load(note).pages[0].items.count, try Document.load(theirs).pages[0].items.count)
+        let idle = try await sync(a)
+        XCTAssertEqual(idle, SyncSummary())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: a.appendingPathComponent(".sync").path))
+    }
+
     func testSkippedNotebookIsLeftAlone() async throws {
         let store = Store(root: a)
         let note = try store.newNotebook(store.root, PageTemplate(), name: "编辑中")
