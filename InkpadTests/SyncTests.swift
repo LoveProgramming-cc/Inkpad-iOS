@@ -407,6 +407,38 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(try shape(note), [2])
     }
 
+    /// The open notebook is synced by itself: nothing else is sent, and the index is only
+    /// written when something changed.
+    func testSyncOfOneNotebook() async throws {
+        let store = Store(root: a)
+        let note = try store.newNotebook(store.root, PageTemplate(), name: "打开着")
+        let other = try store.newNotebook(store.root, PageTemplate(), name: "别的")
+        try await sync(a)
+        try await sync(b)
+        let theirs = b.appendingPathComponent("打开着.inkpad")
+        _ = try addStroke(note, x: 1)
+        _ = try addStroke(other, x: 2)
+        _ = try addStroke(theirs, x: 3)
+
+        var s = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud), only: [note])
+        XCTAssertEqual(s.up, 1)
+        s = try await LibrarySync.sync(root: b, drive: FakeDrive(cloud), only: [theirs])
+        XCTAssertEqual(s.merged, 1)
+        XCTAssertEqual(try shape(theirs), [2])
+        XCTAssertEqual(try shape(b.appendingPathComponent("别的.inkpad")), [0])
+        s = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud), only: [note])
+        XCTAssertEqual(try shape(note), [2])
+        let index = cloud.files.first { $0.value.name == LibrarySync.indexName }!.value.data
+        s = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud), only: [note])
+        XCTAssertEqual(s, SyncSummary())
+        XCTAssertEqual(cloud.files.first { $0.value.name == LibrarySync.indexName }!.value.data, index)
+        // The rest goes with the next sync of the whole library.
+        s = try await sync(a)
+        XCTAssertEqual(s.up, 1)
+        s = try await sync(b)
+        XCTAssertEqual(try shape(b.appendingPathComponent("别的.inkpad")), [1])
+    }
+
     func testSkippedNotebookIsLeftAlone() async throws {
         let store = Store(root: a)
         let note = try store.newNotebook(store.root, PageTemplate(), name: "编辑中")

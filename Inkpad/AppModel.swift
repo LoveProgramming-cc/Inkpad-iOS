@@ -20,6 +20,7 @@ final class EditorSession: ObservableObject, Identifiable {
     let canvas: CanvasView
     var onError: ((String) -> Void)?
     var onToast: ((String) -> Void)?
+    var onEdit: (() -> Void)?    // something was written, drawn, erased or otherwise changed
 
     private var listener: UUID?
     private var saveTimer: Timer?
@@ -52,7 +53,10 @@ final class EditorSession: ObservableObject, Identifiable {
             switch event {
             case .state, .pages, .meta:
                 self.tick += 1
-                if self.doc.modified { self.scheduleSave() }
+                if self.doc.modified {
+                    self.scheduleSave()
+                    self.onEdit?()
+                }
             default:
                 break
             }
@@ -205,6 +209,11 @@ final class AppModel: ObservableObject {
 
     private var toastTimer: Timer?
     private var syncTask: Task<Void, Never>?
+    private var syncNext: (quiet: Bool, only: Bool)?   // a sync asked for while one was running
+    private var editTimer: Timer?                      // runs out a moment after the last stroke
+    private var watchTimer: Timer?
+    private var openSynced = Date.distantPast          // when the open notebook was last synced,
+    private var openTook = 0.0                         // and how long that took
 
     init() {
         lastSync = LibrarySync.lastSync(store.root)
@@ -262,7 +271,10 @@ final class AppModel: ObservableObject {
             let s = try EditorSession(url: url)
             s.onError = { [weak self] in self?.show($0) }
             s.onToast = { [weak self] in self?.show($0) }
+            s.onEdit = { [weak self] in self?.syncAfterEdit() }
             session = s
+            syncOpen()   // so that it shows what other devices wrote in it
+            watchOpen()
             let rel = store.rel(url)
             if !rel.hasPrefix(".") {
                 tools.p.recent = Array(([rel] + tools.p.recent.filter { $0 != rel }).prefix(8))
@@ -357,19 +369,26 @@ final class AppModel: ObservableObject {
     /// Merge the library with Google Drive. The open notebook syncs like any other: it is saved
     /// first, and what the sync then does to its file is taken into the editor when the sync
     /// is over (and before any later save).
-    func sync(quiet: Bool) {
+    func sync(quiet: Bool, only: Bool = false) {
         connected = GoogleAccount.connected
         guard connected else {
             if !quiet { alert = tr("尚未连接 Google Drive") }
             return
         }
-        guard !syncing else { return }
+        guard !syncing else {
+            // Not forgotten: it runs when this one is over. The whole library outranks one notebook.
+            syncNext = (quiet && (syncNext?.quiet ?? true), only && (syncNext?.only ?? true))
+            return
+        }
+        let only = only && session != nil
+        let began = Date()
         syncing = true
         syncFraction = 0
         syncText = ""
         syncError = nil
         let root = store.root
         if let session, session.canvas.op == nil { session.save(wait: true) }
+        let which = only ? session.map { [$0.url] } : nil
         let background = UIApplication.shared.beginBackgroundTask(withName: "sync") { [weak self] in self?.syncTask?.cancel() }
         let pace = Pace()
         syncTask = Task {
@@ -377,7 +396,7 @@ final class AppModel: ObservableObject {
             var failure: String?
             do {
                 summary = try await Task.detached(priority: .utility) {
-                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), folder: GoogleAccount.folderID) { fraction, text in
+                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), only: which, folder: GoogleAccount.folderID) { fraction, text in
                         // A transfer reports every few kilobytes; the screen need not hear of each.
                         guard pace.due(fraction) else { return }
                         Task { @MainActor in
@@ -393,9 +412,17 @@ final class AppModel: ObservableObject {
             syncing = false
             syncTask = nil
             lastSync = LibrarySync.lastSync(root)
-            store.reloadMeta()
-            refreshLibrary()
-            followOpenNotebook()
+            if !only {
+                store.reloadMeta()
+                refreshLibrary()
+            }
+            followOpenNotebook(announce: !only)
+            openSynced = Date()
+            if only { openTook = openSynced.timeIntervalSince(began) }
+            if let next = syncNext {
+                syncNext = nil
+                DispatchQueue.main.async { self.sync(quiet: next.quiet, only: next.only) }
+            }
             if let failure {
                 syncError = failure
                 if !quiet { alert = trf("同步失败：%s", failure) }
@@ -406,12 +433,48 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // A notebook that is open is one that is being worked on: it is synced by itself when it is
+    // opened, a moment after every pause in writing, and looked up on Drive twice a minute for
+    // what other devices wrote. Only that notebook is touched, so this costs a few requests.
+
+    func syncOpen() {
+        if session != nil, GoogleAccount.connected { sync(quiet: true, only: true) }
+    }
+
+    /// Sync the open notebook once the pen has rested: after the autosave, and not sooner after
+    /// the last sync than that one took, so that a large notebook is not sent non-stop.
+    func syncAfterEdit() {
+        guard connected else { return }
+        editTimer?.invalidate()
+        let wait = max(5, openSynced.addingTimeInterval(4 * openTook).timeIntervalSinceNow)
+        editTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let session = self.session else { return }
+                self.editTimer = nil
+                if session.canvas.op != nil || self.syncing { self.syncAfterEdit() } else { self.syncOpen() }
+            }
+        }
+    }
+
+    private func watchOpen() {
+        watchTimer?.invalidate()
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self, self.session != nil else {
+                    timer.invalidate()
+                    return
+                }
+                if self.editTimer == nil, UIApplication.shared.applicationState == .active { self.syncOpen() }
+            }
+        }
+    }
+
     /// After a sync the open notebook may have been replaced, merged, moved or deleted.
-    private func followOpenNotebook() {
+    private func followOpenNotebook(announce: Bool = true) {
         guard let session else { return }
         if session.canvas.op != nil {
             // In the middle of a stroke; look again in a moment.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.followOpenNotebook() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.followOpenNotebook(announce: announce) }
             return
         }
         if !FileManager.default.fileExists(atPath: session.url.path) {
@@ -428,7 +491,7 @@ final class AppModel: ObservableObject {
         if session.changedOnDisk {
             do {
                 try session.absorb()
-                show(tr("此笔记本已在其他设备上更改，已重新载入"))
+                if announce { show(tr("此笔记本已在其他设备上更改，已重新载入")) }
             } catch {
                 alert = tr("无法打开笔记本") + "\n" + error.localizedDescription
             }

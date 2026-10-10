@@ -272,7 +272,10 @@ enum LibrarySync {
     /// skip lists notebooks to leave alone (one being edited). progress(fraction, text)
     /// reports how far along the sync is: one step for reading the index, one per
     /// notebook (advancing with the bytes of its transfer) and one for the end.
-    static func sync(root: URL, drive: DriveAPI, skip: [URL] = [], folder: String = "", progress: ((Double, String) -> Void)? = nil) async throws -> SyncSummary {
+    ///
+    /// With `only`, nothing but those notebooks is looked at, which takes a few requests and is
+    /// what an open notebook is kept up to date with while it is being written in.
+    static func sync(root: URL, drive: DriveAPI, skip: [URL] = [], only: [URL]? = nil, folder: String = "", progress: ((Double, String) -> Void)? = nil) async throws -> SyncSummary {
         let fm = FileManager.default
         let root = root.standardizedFileURL
         let report = progress ?? { _, _ in }
@@ -332,6 +335,7 @@ enum LibrarySync {
         /// Write the index. It is read again first: whatever another device changed in it while
         /// this sync was running is kept, wherever this sync did not change the same thing.
         func publish() async throws {
+            if indexID != nil, same(index(), mineWas) { return }   // nothing to write down
             if indexID == nil { indexID = try await drive.find(indexName, parent: rootID) }
             var latest: [String: Any] = [:]
             if let indexID { latest = try await drive.getJSON(indexID) }
@@ -366,8 +370,10 @@ enum LibrarySync {
         var found = files.sorted { $0.key < $1.key }.map { Local(url: $0.value, rel: $0.key, inTrash: false) }
         let trashNames = ((try? fm.contentsOfDirectory(atPath: trashDir.path)) ?? []).filter { $0.hasSuffix(notebookExt) }.sorted()
         found += trashNames.map { Local(url: trashDir.appendingPathComponent($0), rel: $0, inTrash: true) }
+        let onlyPaths = only.map { Set($0.map { $0.standardizedFileURL.path }) }
         for entry in found {
             var here = entry
+            if let onlyPaths, !onlyPaths.contains(here.url.standardizedFileURL.path) { continue }
             guard var nid = try? Notebook.id(of: here.url) else { continue }   // not a readable notebook; leave it alone
             if skipPaths.contains(here.url.standardizedFileURL.path) {
                 skipIDs.insert(nid)
@@ -487,7 +493,7 @@ enum LibrarySync {
             throw DriveError(trf("“%s”在同步时一直被其它设备更改，请稍后再同步", path.lastPathComponent))
         }
 
-        let ids = Set(local.keys).union(items.keys).union(known.keys).sorted()
+        let ids = only == nil ? Set(local.keys).union(items.keys).union(known.keys).sorted() : local.keys.sorted()
         let steps = Double(ids.count + 2)
         for (n, nid) in ids.enumerated() {
             try Task.checkCancellation()
@@ -591,6 +597,13 @@ enum LibrarySync {
         }
 
         drive.onBytes = nil
+        if only != nil {
+            try await publish()
+            state["items"] = known
+            try saveJSON(statePath, state)
+            report(1, "")
+            return summary
+        }
         report((steps - 1) / steps, tr("正在更新云端目录…"))
         // Folders, so that empty ones and their removal carry over too.
         var folders = cloud["folders"] as? [String: Any] ?? [:]   // relative path -> deleted?
