@@ -30,6 +30,15 @@ enum L10n {
     }()
 
     static let extraEN: [String: String] = [
+        "5 秒": "5 seconds",
+        "10 秒": "10 seconds",
+        "15 秒": "15 seconds",
+        "30 秒": "30 seconds",
+        "1 分钟": "1 minute",
+        "2 分钟": "2 minutes",
+        "5 分钟": "5 minutes",
+        "打开的笔记本多久同步一次": "How often the open notebook is synced",
+        "每隔这么久查看一次其它设备写了什么；自己写的内容在停笔几秒后就会同步，与这里无关": "How often to look for what other devices wrote. What you write here is synced a few seconds after you pause, whatever this says",
         "“%s”缺少它的 PDF 或图片，暂时无法补全：%s": "“%s” is missing its PDFs or pictures and could not be completed for now: %s",
         "从云端下载的 PDF 或图片（%s）内容不对，没有使用它。请再同步一次。": "A PDF or picture downloaded from the cloud (%s) did not have the right content and was not used. Please sync again.",
         "上传的 PDF 或图片在云端的校验值不对，请再同步一次": "A PDF or picture arrived in the cloud with the wrong checksum; please sync again",
@@ -78,6 +87,15 @@ enum L10n {
     ]
 
     static let extraJA: [String: String] = [
+        "5 秒": "5 秒",
+        "10 秒": "10 秒",
+        "15 秒": "15 秒",
+        "30 秒": "30 秒",
+        "1 分钟": "1 分",
+        "2 分钟": "2 分",
+        "5 分钟": "5 分",
+        "打开的笔记本多久同步一次": "開いているノートを同期する間隔",
+        "每隔这么久查看一次其它设备写了什么；自己写的内容在停笔几秒后就会同步，与这里无关": "他のデバイスで書かれた内容をこの間隔で確認します。このデバイスで書いた内容は、この設定に関係なく、ペンを止めて数秒後に同期されます",
         "“%s”缺少它的 PDF 或图片，暂时无法补全：%s": "「%s」の PDF または画像が欠けており、今は補えません：%s",
         "从云端下载的 PDF 或图片（%s）内容不对，没有使用它。请再同步一次。": "クラウドからダウンロードした PDF または画像（%s）の内容が正しくないため、使用しませんでした。もう一度同期してください。",
         "上传的 PDF 或图片在云端的校验值不对，请再同步一次": "アップロードした PDF または画像のクラウド上のチェックサムが一致しません。もう一度同期してください",

@@ -54,6 +54,7 @@ struct Prefs: Codable, Equatable {
     var theme = "system"
     var language = "auto"
     var scrollbars = true
+    var syncEvery = 30.0     // seconds between two looks at Drive for the notebook that is open
     var maxZoom = 6.0
     var hiddenTools: [String] = []
     var paging = "vertical"  // or horizontal: one page at a time, side by side

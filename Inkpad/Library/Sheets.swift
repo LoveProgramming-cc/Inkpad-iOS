@@ -436,6 +436,19 @@ struct SettingsView: View {
                             Text(tr("Inkpad 只能使用它自己创建的文件夹")).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
+                    Picker(selection: $tools.p.syncEvery) {
+                        Text(tr("5 秒")).tag(5.0)
+                        Text(tr("10 秒")).tag(10.0)
+                        Text(tr("15 秒")).tag(15.0)
+                        Text(tr("30 秒")).tag(30.0)
+                        Text(tr("1 分钟")).tag(60.0)
+                        Text(tr("2 分钟")).tag(120.0)
+                        Text(tr("5 分钟")).tag(300.0)
+                    } label: {
+                        Text(tr("打开的笔记本多久同步一次"))
+                        Text(tr("每隔这么久查看一次其它设备写了什么；自己写的内容在停笔几秒后就会同步，与这里无关")).font(.footnote)
+                    }
+                    .onChange(of: tools.p.syncEvery) { _ in app.watchOpen() }
                     LabeledContent {
                     } label: {
                         Text(tr("凭据保存位置"))

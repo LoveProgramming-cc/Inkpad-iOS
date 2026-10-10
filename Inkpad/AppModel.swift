@@ -439,7 +439,8 @@ final class AppModel: ObservableObject {
     }
 
     // A notebook that is open is one that is being worked on: it is synced by itself when it is
-    // opened, a moment after every pause in writing, and looked up on Drive twice a minute for
+    // opened, a moment after every pause in writing, and looked up on Drive every half minute, or
+    // as often as the settings say, for
     // what other devices wrote. Only that notebook is touched, so this costs a few requests.
 
     func syncOpen() {
@@ -461,15 +462,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func watchOpen() {
+    /// Started again when the interval is changed in the settings. A look that comes while a
+    /// sync is still running is left out, so that a short interval does not queue them up.
+    func watchOpen() {
         watchTimer?.invalidate()
-        watchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] timer in
+        watchTimer = nil
+        guard session != nil else { return }
+        let every = min(300, max(5, tools.p.syncEvery))
+        watchTimer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { [weak self] timer in
             Task { @MainActor in
                 guard let self, self.session != nil else {
                     timer.invalidate()
                     return
                 }
-                if self.editTimer == nil, UIApplication.shared.applicationState == .active { self.syncOpen() }
+                if self.editTimer == nil, !self.syncing, UIApplication.shared.applicationState == .active { self.syncOpen() }
             }
         }
     }
