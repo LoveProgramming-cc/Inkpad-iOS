@@ -12,6 +12,13 @@ import CryptoKit
 /// undone by them; renames and moves are just a changed path on the same id.
 /// Nothing is destroyed: deletions go to the local trash, and a notebook edited on
 /// both sides is merged item by item.
+///
+/// Two devices may well sync at the same moment, and one of them may be cut off half way
+/// and go on much later with what it read before. So the index is never taken at its word
+/// about a notebook's content: what counts is the checksum Drive itself reports for the
+/// file, asked for again just before the file is replaced. A device that finds another
+/// has been there first merges instead of overwriting, and the index is read again
+/// before it is written, so that what others put in it meanwhile is kept.
 
 struct DriveError: LocalizedError {
     let message: String
@@ -49,6 +56,8 @@ protocol DriveAPI: AnyObject {
     func download(_ fileID: String, to dest: URL) async throws
     /// The files in a folder.
     func children(_ parent: String) async throws -> [DriveFile]
+    /// The checksum of a file's content as it is on Drive at this moment.
+    func md5(_ fileID: String) async throws -> String?
     /// Whether a file or folder is still there, and not in the bin. (One that has been binned
     /// still answers to its id, which is why this has to be asked.)
     func alive(_ fileID: String) async throws -> Bool
@@ -297,8 +306,52 @@ enum LibrarySync {
                 items[nid] = nil
             }
         }
+        let actual = Dictionary(inFolder.compactMap { f in f.md5.map { (f.id, $0) } }, uniquingKeysWith: { a, _ in a })
+        for entry in items.values where !entry.deleted {
+            // The file itself says what is in it. The index may be behind: a device that was cut
+            // off after an upload never got to write it down.
+            if let file = entry.file, let md5 = actual[file] { entry.d["md5"] = md5 }
+        }
+        /// The index as this sync has it now.
+        func index() -> [String: Any] {
+            var out = cloud
+            out["items"] = items.mapValues { $0.d }
+            return out
+        }
+        var read = cloud          // the index as it was read, to tell later what others changed
+        var mineWas = index()     // and as this sync started out with it
+        var sent = Set<String>()  // ids of the notebooks this sync uploaded
         var savedAt = Date()
         var moved = 0
+
+        func same(_ a: Any?, _ b: Any?) -> Bool {
+            if let a, let b { return (a as AnyObject).isEqual(b) }
+            return a == nil && b == nil
+        }
+
+        /// Write the index. It is read again first: whatever another device changed in it while
+        /// this sync was running is kept, wherever this sync did not change the same thing.
+        func publish() async throws {
+            if indexID == nil { indexID = try await drive.find(indexName, parent: rootID) }
+            var latest: [String: Any] = [:]
+            if let indexID { latest = try await drive.getJSON(indexID) }
+            var out = index()
+            for part in ["items", "folders"] {
+                var ours = out[part] as? [String: Any] ?? [:]
+                let was = read[part] as? [String: Any] ?? [:], began = mineWas[part] as? [String: Any] ?? [:]
+                for (key, value) in latest[part] as? [String: Any] ?? [:] where !same(value, was[key]) && same(ours[key], began[key]) {
+                    ours[key] = value
+                    if part == "items" { items[key] = Ref(value as? [String: Any] ?? [:]) }
+                }
+                out[part] = ours
+            }
+            if num((latest["meta"] as? [String: Any])?["ts"]) > num((out["meta"] as? [String: Any])?["ts"]) { out["meta"] = latest["meta"] }
+            indexID = try await drive.putJSON(indexName, out, parent: rootID, fileID: indexID)
+            state["index"] = indexID
+            cloud = out
+            read = out
+            mineWas = out
+        }
 
         func abspath(_ rel: String) -> URL {
             rel.split(separator: "/").reduce(root) { $0.appendingPathComponent(String($1)) }
@@ -358,6 +411,80 @@ enum LibrarySync {
             entry.d["deleted"] = false
             entry.d["ts"] = now()
             summary.up += 1
+            sent.insert(nid)
+        }
+
+        /// Make a notebook and the cloud's version of it the same, losing nothing of either.
+        func settle(_ nid: String, _ entry: Ref, _ before: [String: Any]?) async throws {
+            let path = local[nid]!.url
+            var base = before?["md5"] as? String                // what both sides last agreed on
+            var mineSent = before?["sent"] as? Bool ?? false    // ...which this device had written
+            for _ in 0..<5 {
+                let mine = try md5(path)
+                if mine == entry.md5 { return }
+                guard let file = entry.file else {
+                    try await push(nid, entry, mine)
+                    return
+                }
+                if let base, entry.md5 == base {
+                    // Only this device has changed it, as far as was known when the sync began.
+                    // Another may have sent its own version since; uploading now would wipe that out.
+                    let now = try await drive.md5(file)
+                    if now == nil || now == base {
+                        try await push(nid, entry, mine)
+                        return
+                    }
+                    entry.d["md5"] = now
+                    continue
+                }
+                let theirs = path.appendingPathExtension("theirs")
+                try await drive.download(file, to: theirs)
+                entry.d["md5"] = try md5(theirs)
+                let taken: Bool = try fileLock.withLock {
+                    let untouched = try base != nil && md5(path) == base
+                    var replace = untouched && !mineSent   // nothing here that the cloud's version lacks
+                    if !replace {
+                        do {
+                            let hereDoc = try Document.load(path), theirDoc = try Document.load(theirs)
+                            if untouched {
+                                // The cloud's version ought to be a later one of what this device sent.
+                                // If another device wrote over that without having seen it, it is not;
+                                // then what was written here is put back into it.
+                                if merge(theirDoc, hereDoc) == (0, 0, 0, 0) {
+                                    replace = true
+                                } else {
+                                    try theirDoc.save(to: path)
+                                }
+                            } else {
+                                // Edited on both sides: merge the two, item by item.
+                                merge(hereDoc, theirDoc)
+                                try hereDoc.save(to: path)
+                            }
+                            if !replace {
+                                try? fm.removeItem(at: theirs)
+                                summary.merged += 1
+                            }
+                        } catch {
+                            // Only if merging is not possible is the remote version kept as a notebook
+                            // of its own.
+                            let stem = path.deletingPathExtension().lastPathComponent + tr("（云端副本）") + notebookExt
+                            let copy = unique(path.deletingLastPathComponent().appendingPathComponent(stem))
+                            try fm.moveItem(at: theirs, to: copy)
+                            try? Notebook.setID(copy, UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
+                            summary.conflicts += 1
+                        }
+                    }
+                    if replace {
+                        _ = try fm.replaceItemAt(path, withItemAt: theirs)
+                        summary.down += 1
+                    }
+                    return replace
+                }
+                if taken { return }
+                base = entry.md5   // what is here now has all of that version in it
+                mineSent = false
+            }
+            throw DriveError(trf("“%s”在同步时一直被其它设备更改，请稍后再同步", path.lastPathComponent))
         }
 
         let ids = Set(local.keys).union(items.keys).union(known.keys).sorted()
@@ -422,33 +549,7 @@ enum LibrarySync {
                     content = false
                 }
                 if content && mine != entry.md5 {
-                    if unchanged, let file = entry.file {
-                        try await drive.download(file, to: here.url)
-                        summary.down += 1
-                    } else if before != nil && entry.md5 == beforeMD5 {
-                        try await push(nid, entry, mine)
-                    } else if let file = entry.file {
-                        // Edited on both sides: merge the two, item by item. Only if that is not
-                        // possible is the remote version kept as a notebook of its own.
-                        let theirs = here.url.appendingPathExtension("theirs")
-                        try await drive.download(file, to: theirs)
-                        do {
-                            let merged = try Document.load(here.url)
-                            merge(merged, try Document.load(theirs))
-                            try merged.save(to: here.url)
-                            try? fm.removeItem(at: theirs)
-                            summary.merged += 1
-                        } catch {
-                            let stem = here.url.deletingPathExtension().lastPathComponent + tr("（云端副本）") + notebookExt
-                            let copy = unique(here.url.deletingLastPathComponent().appendingPathComponent(stem))
-                            try fm.moveItem(at: theirs, to: copy)
-                            try? Notebook.setID(copy, UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
-                            summary.conflicts += 1
-                        }
-                        try await push(nid, entry, md5(here.url))
-                    } else {
-                        try await push(nid, entry, mine)
-                    }
+                    try await settle(nid, entry, before)
                 }
                 // Name, folder and trash state travel separately from the content.
                 let therePath = entry.path, thereTrash = entry.trashed
@@ -471,15 +572,17 @@ enum LibrarySync {
             guard let at = local[nid], let entry = items[nid] else { continue }
             entry.d["path"] = at.rel
             entry.d["trashed"] = at.inTrash
+            let was = known[nid]
             known[nid] = ["path": at.rel, "trashed": at.inTrash, "md5": entry.md5 ?? ""]
+            if sent.contains(nid) || (was?["sent"] as? Bool == true && was?["md5"] as? String == entry.md5) {
+                known[nid]?["sent"] = true   // the cloud's version is the one this device wrote
+            }
             if summary.up + summary.down != moved {
                 moved = summary.up + summary.down
                 // Write down, in the cloud and here, what has been done so far, so that a sync
                 // that is cut off goes on from there the next time.
                 if Date().timeIntervalSince(savedAt) >= checkpoint {
-                    cloud["items"] = items.mapValues { $0.d }
-                    indexID = try await drive.putJSON(indexName, cloud, parent: rootID, fileID: indexID)
-                    state["index"] = indexID
+                    try await publish()
                     state["items"] = known
                     try saveJSON(statePath, state)
                     savedAt = Date()
@@ -528,9 +631,8 @@ enum LibrarySync {
             cloud["meta"] = shared
         }
 
-        cloud["items"] = items.mapValues { $0.d }
         cloud["folders"] = folders
-        state["index"] = try await drive.putJSON(indexName, cloud, parent: rootID, fileID: indexID)
+        try await publish()
         state["items"] = known
         state["last"] = now()
         try saveJSON(statePath, state)

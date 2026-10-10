@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import Inkpad
 
 /// Drive kept in memory, shared by the "devices" of a test.
@@ -14,6 +15,8 @@ final class FakeDrive: DriveAPI {
 
     init(_ cloud: Cloud) { self.cloud = cloud }
 
+    static func sum(_ data: Data) -> String { Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
     private func newID() -> String {
         cloud.n += 1
         return "file\(cloud.n)"
@@ -26,7 +29,12 @@ final class FakeDrive: DriveAPI {
     }
 
     func getJSON(_ fileID: String) async throws -> [String: Any] {
-        try JSONSerialization.jsonObject(with: cloud.files[fileID]!.data) as! [String: Any]
+        let out = try JSONSerialization.jsonObject(with: cloud.files[fileID]!.data) as! [String: Any]
+        if let then = afterIndex {
+            afterIndex = nil
+            try await then()
+        }
+        return out
     }
 
     func putJSON(_ name: String, _ value: [String: Any], parent: String, fileID: String?) async throws -> String {
@@ -53,9 +61,21 @@ final class FakeDrive: DriveAPI {
 
     func alive(_ fileID: String) async throws -> Bool { fileID == "root" || fileID.hasPrefix("folder") || cloud.files[fileID] != nil }
 
+    func md5(_ fileID: String) async throws -> String? {
+        let out = cloud.files[fileID].map { Self.sum($0.data) }
+        if let then = afterMD5 {
+            afterMD5 = nil
+            try await then()
+        }
+        return out
+    }
+
+    /// Something that another device does at a chosen moment of this one's sync.
+    var afterIndex: (() async throws -> Void)?, afterMD5: (() async throws -> Void)?
+
     func children(_ parent: String) async throws -> [DriveFile] {
         // Ids are handed out in order, so the number in one says how new the file is.
-        cloud.files.map { DriveFile(id: $0.key, name: $0.value.name, md5: nil, modified: Double($0.key.dropFirst(4)) ?? 0) }
+        cloud.files.map { DriveFile(id: $0.key, name: $0.value.name, md5: Self.sum($0.value.data), modified: Double($0.key.dropFirst(4)) ?? 0) }
     }
 }
 
@@ -255,6 +275,7 @@ final class SyncTests: XCTestCase {
             func download(_ fileID: String, to dest: URL) async throws { try await inner.download(fileID, to: dest) }
             func children(_ parent: String) async throws -> [DriveFile] { try await inner.children(parent) }
             func alive(_ fileID: String) async throws -> Bool { try await inner.alive(fileID) }
+            func md5(_ fileID: String) async throws -> String? { try await inner.md5(fileID) }
         }
         let store = Store(root: a)
         for name in ["一", "二", "三"] { _ = try store.newNotebook(store.root, PageTemplate(), name: name) }
@@ -325,6 +346,65 @@ final class SyncTests: XCTestCase {
         XCTAssertNotEqual(try Notebook.id(of: note), try Notebook.id(of: a.appendingPathComponent("拷贝.inkpad")))
         try await sync(b)
         XCTAssertEqual(books(b), ["原件.inkpad", "拷贝.inkpad"])
+    }
+
+    /// A new page with a stroke on it, and a stroke on the first page.
+    func addPage(_ url: URL, x: Double) throws {
+        let doc = try Document.load(url)
+        let page = Page()
+        doc.perform(.pages(removed: [], added: [(doc.pages.count, page)]))
+        doc.addItems(page, [Stroke("ball", .black, 1, [Pt(x: x, y: 0), Pt(x: x, y: 50)])])
+        doc.addItems(doc.pages[0], [Stroke("ball", .black, 1, [Pt(x: x + 1, y: 0), Pt(x: x + 1, y: 50)])])
+        try doc.save()
+    }
+
+    func shape(_ url: URL) throws -> [Int] {
+        try Document.load(url).pages.map(\.items.count)
+    }
+
+    /// Two devices each add a page and write on the first one, and their syncs overlap: one
+    /// has read the index, or is about to upload, when the other syncs from start to end.
+    func testOverlappingSyncsLoseNothing() async throws {
+        for moment in ["index", "md5"] {
+            let cloud = FakeDrive.Cloud()
+            let a = base.appendingPathComponent("a-" + moment), b = base.appendingPathComponent("b-" + moment)
+            for dir in [a, b] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+            let store = Store(root: a)
+            let mine = try store.newNotebook(store.root, PageTemplate(), name: "同一本")
+            _ = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud))
+            _ = try await LibrarySync.sync(root: b, drive: FakeDrive(cloud))
+            let theirs = b.appendingPathComponent("同一本.inkpad")
+            try addPage(mine, x: 10)
+            try addPage(theirs, x: 20)
+
+            let slow = FakeDrive(cloud)
+            let other: () async throws -> Void = { _ = try await LibrarySync.sync(root: b, drive: FakeDrive(cloud)) }
+            if moment == "index" { slow.afterIndex = other } else { slow.afterMD5 = other }
+            _ = try await LibrarySync.sync(root: a, drive: slow)
+            for _ in 0..<3 {
+                _ = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud))
+                _ = try await LibrarySync.sync(root: b, drive: FakeDrive(cloud))
+            }
+            XCTAssertEqual(try shape(mine), [2, 1, 1], moment)
+            XCTAssertEqual(try shape(theirs), [2, 1, 1], moment)
+            let last = try await LibrarySync.sync(root: a, drive: FakeDrive(cloud))
+            XCTAssertEqual(last, SyncSummary(), moment)
+        }
+    }
+
+    /// The editor never writes over what a sync put in the file.
+    func testSaveAfterTheFileChanged() throws {
+        let store = Store(root: a)
+        let note = try store.newNotebook(store.root, PageTemplate(), name: "打开着")
+        let open = try Document.load(note)
+        let sign = fileSign(note)
+        _ = try addStroke(note, x: 5)   // what a sync brings
+        XCTAssertNotEqual(fileSign(note), sign)
+        open.addItems(open.pages[0], [Stroke("ball", .black, 1, [Pt(x: 9, y: 0), Pt(x: 9, y: 50)])])
+        XCTAssertThrowsError(try Document.write(open.snapshot(), to: note, expect: sign)) { XCTAssertTrue($0 is FileChanged) }
+        merge(open, try Document.load(note))
+        try Document.write(open.snapshot(), to: note, expect: fileSign(note))
+        XCTAssertEqual(try shape(note), [2])
     }
 
     func testSkippedNotebookIsLeftAlone() async throws {

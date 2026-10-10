@@ -368,7 +368,7 @@ extension CanvasView {
             return
         }
         let tool = tools.tool
-        let path = CGMutablePath()
+        var path = CGMutablePath()
         var width: CGFloat = 1.2
         if tool == "text" || tool == "note" {
             // The text caret.
@@ -390,11 +390,24 @@ extension CanvasView {
             width = 1
             path.addEllipse(in: CGRect(x: -2.1, y: -2.1, width: 4.2, height: 4.2))
         }
+        var ink = UIColor(white: 0.1, alpha: 0.95)
+        var edge = ink
+        if !tools.p.crosshair, tool == "pen" || tool == "hl" || tool == "shape" {
+            // The mark a pen is about to leave: its colour, and its width at this zoom.
+            let hl = tool == "hl"
+            let d = max(2.5, CGFloat(hl ? tools.hlWidth : tools.penWidth) * CGFloat(zoom))
+            path = CGMutablePath()
+            path.addEllipse(in: CGRect(x: -d / 2, y: -d / 2, width: d, height: d))
+            ink = (hl ? tools.hlColor : tools.penColor).ui.withAlphaComponent(hl ? 0.55 : 1)
+            // A thin rim, so that a pale colour still shows on pale paper.
+            edge = UIColor(white: 0.1, alpha: 0.35)
+            width = 0.5
+        }
         hoverLayer.path = path
         hoverLayer.lineWidth = width
         hoverLayer.lineCap = .round
-        hoverLayer.strokeColor = UIColor(white: 0.1, alpha: 0.95).cgColor
-        hoverLayer.fillColor = tools.p.crosshair || tool == "eraser" || tool == "text" || tool == "note" ? nil : UIColor(white: 0.1, alpha: 0.95).cgColor
+        hoverLayer.strokeColor = edge.cgColor
+        hoverLayer.fillColor = tools.p.crosshair || tool == "eraser" || tool == "text" || tool == "note" ? nil : ink.cgColor
         hoverLayer.shadowColor = UIColor.white.cgColor
         hoverLayer.shadowOpacity = 0.9
         hoverLayer.shadowRadius = 0.8

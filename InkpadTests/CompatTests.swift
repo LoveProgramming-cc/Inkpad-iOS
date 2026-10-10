@@ -24,8 +24,9 @@ final class DirDrive: DriveAPI {
     func root() async throws -> String { "root" }
     func alive(_ fileID: String) async throws -> Bool { fileID == "root" || FileManager.default.fileExists(atPath: file(fileID).path) }
     func children(_ parent: String) async throws -> [DriveFile] {
-        names.map { DriveFile(id: $0.key, name: $0.value, md5: nil, modified: 0) }
+        names.map { DriveFile(id: $0.key, name: $0.value, md5: try? LibrarySync.md5(file($0.key)), modified: 0) }
     }
+    func md5(_ fileID: String) async throws -> String? { try? LibrarySync.md5(file(fileID)) }
     func find(_ name: String, parent: String) async throws -> String? { names.first { $0.value == name }?.key }
     func getJSON(_ fileID: String) async throws -> [String: Any] { LibrarySync.loadJSON(file(fileID)) }
 

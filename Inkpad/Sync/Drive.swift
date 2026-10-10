@@ -236,6 +236,10 @@ final class GoogleDrive: NSObject, DriveAPI, URLSessionTaskDelegate {
         }
     }
 
+    func md5(_ fileID: String) async throws -> String? {
+        try await json("GET", "\(Self.api)/files/\(fileID)?fields=md5Checksum")["md5Checksum"] as? String
+    }
+
     func children(_ parent: String) async throws -> [DriveFile] {
         let stamp = ISO8601DateFormatter()
         stamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

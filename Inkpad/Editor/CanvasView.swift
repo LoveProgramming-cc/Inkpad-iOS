@@ -172,7 +172,7 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
         minimap.isHidden = true
         addSubview(minimap)
         hoverLayer.isHidden = true
-        hoverLayer.actions = ["position": NSNull(), "path": NSNull(), "hidden": NSNull()]
+        hoverLayer.actions = ["position": NSNull(), "path": NSNull(), "hidden": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull(), "lineWidth": NSNull()]
         layer.addSublayer(hoverLayer)
         pageBar.backgroundColor = UIColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 0.75).cgColor
         pageBar.cornerRadius = 2.5

@@ -29,6 +29,20 @@ struct Snapshot {
     let id: String
 }
 
+/// Held while a notebook file is compared with what is expected to be there and then replaced:
+/// by an editor saving it, and by a sync putting another device's version in its place. Without
+/// it either of the two could write over what the other had only just written.
+let fileLock = NSRecursiveLock()
+
+/// What tells one writing of a file from the next, or nil when there is no file.
+func fileSign(_ url: URL) -> String? {
+    guard let v = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]), let size = v.fileSize else { return nil }
+    return "\(v.contentModificationDate?.timeIntervalSince1970 ?? 0)/\(size)"
+}
+
+/// The file is no longer the one that the document was read from or last written to.
+struct FileChanged: Error {}
+
 func md5Hex(_ text: String) -> String {
     Insecure.MD5.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
 }
@@ -294,6 +308,17 @@ final class Document {
                         cover: cover(), rev: rev, id: id)
     }
 
+    /// Write the file and return its fileSign(). With `expect`, the sign the file had when it
+    /// was last read or written, FileChanged is thrown if something else has written it since.
+    @discardableResult
+    static func write(_ snap: Snapshot, to url: URL, expect: String?) throws -> String? {
+        try fileLock.withLock {
+            if let expect, fileSign(url) != expect { throw FileChanged() }
+            try write(snap, to: url)
+            return fileSign(url)
+        }
+    }
+
     static func write(_ snap: Snapshot, to url: URL) throws {
         let z = try ZipWriter(url: url)
         do {
@@ -408,6 +433,7 @@ func merge(_ mine: Document, _ theirs: Document) -> (Int, Int, Int, Int) {
     mine.pages = kept.isEmpty ? Array(mine.pages.prefix(1)) : kept
     counts.1 = before - mine.pages.count
     let other = Dictionary(theirs.pages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    var changed = false
     for page in mine.pages {
         guard let their = other[page.id], their !== page else { continue }
         let gone = page.gone.union(their.gone)
@@ -420,12 +446,15 @@ func merge(_ mine: Document, _ theirs: Document) -> (Int, Int, Int, Int) {
             page.items = keptItems + new
             page.gone = gone
             page.rev += 1
+            changed = true
         }
     }
-    mine.gonePages = gonePages
-    mine.clearHistory()
-    mine.rev += 1
-    mine.emit(.pages)
+    if changed || gonePages != mine.gonePages || counts != (0, 0, 0, 0) {
+        mine.gonePages = gonePages
+        mine.clearHistory()
+        mine.rev += 1
+        mine.emit(.pages)
+    }
     return counts
 }
 

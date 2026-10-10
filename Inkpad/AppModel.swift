@@ -24,9 +24,10 @@ final class EditorSession: ObservableObject, Identifiable {
     private var listener: UUID?
     private var saveTimer: Timer?
     private let saveQueue = DispatchQueue(label: "inkpad.save")
-    private var signature: String?   // what the file looked like when this app last wrote or read it
-    /// While a sync is working on this very file nothing is written to it; edits wait in memory.
-    var suspended = false
+    /// What the file looked like when this app last wrote or read it. (Looked at only with
+    /// fileLock held: the file is written on another thread.)
+    private var signature: String?
+    private var refused = 0   // saves in a row that found another file than the one expected
 
     init(url: URL) throws {
         let loaded = try Document.load(url)
@@ -35,7 +36,7 @@ final class EditorSession: ObservableObject, Identifiable {
         canvas = CanvasView(doc: loaded, tools: ToolState.shared)
         canvas.initialPage = ToolState.shared.p.lastPages[loaded.id] ?? 0
         canvas.memo = ToolState.shared.p.views[loaded.id]   // where it was being looked at last time
-        signature = Self.sign(url)
+        signature = fileSign(url)
         canvas.onPage = { [weak self] in self?.page = $0 }
         canvas.onZoom = { [weak self] in self?.zoom = $0 }
         canvas.onToast = { [weak self] in self?.onToast?($0) }
@@ -44,11 +45,6 @@ final class EditorSession: ObservableObject, Identifiable {
     }
 
     var title: String { url.deletingPathExtension().lastPathComponent }
-
-    private static func sign(_ url: URL) -> String? {
-        guard let v = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else { return nil }
-        return "\(v.contentModificationDate?.timeIntervalSince1970 ?? 0)/\(v.fileSize ?? 0)"
-    }
 
     private func attach() {
         listener = doc.listen { [weak self] event in
@@ -75,39 +71,60 @@ final class EditorSession: ObservableObject, Identifiable {
     func save(wait: Bool = false) {
         saveTimer?.invalidate()
         saveTimer = nil
-        guard doc.modified, !suspended else {
+        guard doc.modified else {
             if wait { saveQueue.sync {} }
             return
         }
+        if wait { saveQueue.sync {} }   // so that what was being written is known to be this app's
+        // Never write over what a sync brought: fold it in first.
+        if changedOnDisk, canvas.op == nil { try? absorb() }
         let snap = doc.snapshot()
-        let url = url, doc = doc
+        let url = url, doc = doc, force = refused >= 3
         doc.savedRev = snap.rev
-        let write = { () -> String? in
-            do {
-                try Document.write(snap, to: url)
-                return nil
-            } catch {
-                return error.localizedDescription
+        let write = { [self] () -> Written in
+            fileLock.withLock {
+                do {
+                    // Only over the file as this app knows it; a sync may have written it since.
+                    // (After a few tries it is written all the same, rather than never.)
+                    let sign = try Document.write(snap, to: url, expect: url == self.url && !force ? signature : nil)
+                    if url == self.url { signature = sign }
+                    return .done
+                } catch is FileChanged {
+                    return .changed
+                } catch {
+                    return .failed(error.localizedDescription)
+                }
             }
         }
         if wait {
-            var failure: String?
-            saveQueue.sync { failure = write() }
-            finishSave(doc, url, failure)
+            var result = Written.done
+            saveQueue.sync { result = write() }
+            finishSave(doc, result)
+            if case .changed = result, canvas.op == nil, refused <= 3 { save(wait: true) }
         } else {
             saveQueue.async {
-                let failure = write()
-                DispatchQueue.main.async { self.finishSave(doc, url, failure) }
+                let result = write()
+                DispatchQueue.main.async { self.finishSave(doc, result) }
             }
         }
     }
 
-    private func finishSave(_ doc: Document, _ url: URL, _ failure: String?) {
-        if let failure {
+    private enum Written {
+        case done, changed, failed(String)
+    }
+
+    private func finishSave(_ doc: Document, _ result: Written) {
+        switch result {
+        case .done:
+            refused = 0
+        case .changed:
+            // Nothing was written. What the sync brought is taken in, and then this is saved again.
+            refused += 1
+            doc.savedRev = -1
+            if doc === self.doc { scheduleSave() }
+        case .failed(let failure):
             doc.savedRev = -1   // still to be written
             onError?(trf("自动保存失败：%s", failure))
-        } else if url == self.url {
-            signature = Self.sign(url)
         }
     }
 
@@ -119,31 +136,35 @@ final class EditorSession: ObservableObject, Identifiable {
     }
 
     /// The file was renamed or moved (by the user here, or by a sync).
-    func moved(to new: URL) {
-        url = new
-        doc.url = new
-        signature = Self.sign(new)
+    func moved(to new: URL, sameContent: Bool = true) {
+        fileLock.withLock {
+            url = new
+            doc.url = new
+            signature = sameContent ? fileSign(new) : nil
+        }
     }
 
     /// Whether something other than this editor has written the file.
-    var changedOnDisk: Bool { Self.sign(url) != signature }
+    var changedOnDisk: Bool { fileLock.withLock { fileSign(url) != signature } }
 
     /// Take in what a sync wrote to the file: load it again, or, when there are edits
     /// here that it does not have, fold it into them item by item.
     func absorb() throws {
-        let loaded = try Document.load(url)
+        let loaded: Document = try fileLock.withLock {
+            let loaded = try Document.load(url)
+            signature = fileSign(url)
+            return loaded
+        }
         if doc.modified {
             canvas.cancelOp()
             canvas.clearSelection()
             merge(doc, loaded)
-            signature = Self.sign(url)
             tick += 1
             scheduleSave()
             return
         }
         if let listener { doc.listeners[listener] = nil }
         doc = loaded
-        signature = Self.sign(url)
         canvas.setDocument(loaded)
         attach()
         tick += 1
@@ -333,9 +354,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Merge the library with Google Drive. A notebook open in the editor is left alone,
-    /// unless `includeOpen` says nobody is writing in it (the app is in the background).
-    func sync(quiet: Bool, includeOpen: Bool = false) {
+    /// Merge the library with Google Drive. The open notebook syncs like any other: it is saved
+    /// first, and what the sync then does to its file is taken into the editor when the sync
+    /// is over (and before any later save).
+    func sync(quiet: Bool) {
         connected = GoogleAccount.connected
         guard connected else {
             if !quiet { alert = tr("尚未连接 Google Drive") }
@@ -347,11 +369,7 @@ final class AppModel: ObservableObject {
         syncText = ""
         syncError = nil
         let root = store.root
-        var skip: [URL] = []
-        if let session {
-            session.save(wait: true)
-            if includeOpen { session.suspended = true } else { skip = [session.url] }
-        }
+        if let session, session.canvas.op == nil { session.save(wait: true) }
         let background = UIApplication.shared.beginBackgroundTask(withName: "sync") { [weak self] in self?.syncTask?.cancel() }
         let pace = Pace()
         syncTask = Task {
@@ -359,7 +377,7 @@ final class AppModel: ObservableObject {
             var failure: String?
             do {
                 summary = try await Task.detached(priority: .utility) {
-                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), skip: skip, folder: GoogleAccount.folderID) { fraction, text in
+                    try await LibrarySync.sync(root: root, drive: GoogleDrive(), folder: GoogleAccount.folderID) { fraction, text in
                         // A transfer reports every few kilobytes; the screen need not hear of each.
                         guard pace.due(fraction) else { return }
                         Task { @MainActor in
@@ -377,9 +395,7 @@ final class AppModel: ObservableObject {
             lastSync = LibrarySync.lastSync(root)
             store.reloadMeta()
             refreshLibrary()
-            session?.suspended = false
             followOpenNotebook()
-            session?.save()
             if let failure {
                 syncError = failure
                 if !quiet { alert = trf("同步失败：%s", failure) }
@@ -393,16 +409,21 @@ final class AppModel: ObservableObject {
     /// After a sync the open notebook may have been replaced, merged, moved or deleted.
     private func followOpenNotebook() {
         guard let session else { return }
+        if session.canvas.op != nil {
+            // In the middle of a stroke; look again in a moment.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.followOpenNotebook() }
+            return
+        }
         if !FileManager.default.fileExists(atPath: session.url.path) {
             let id = session.doc.id
             if let new = LibrarySync.scan(store.root).0.values.first(where: { (try? Notebook.id(of: $0)) == id }) {
-                session.moved(to: new)
+                session.moved(to: new, sameContent: false)   // renamed or moved on another device
             } else {
                 // Deleted on another device: it is in the trash here now.
                 self.session = nil
                 show(tr("已删除"))
+                return
             }
-            return
         }
         if session.changedOnDisk {
             do {
@@ -437,7 +458,7 @@ final class AppModel: ObservableObject {
         switch phase {
         case .background:
             session?.save(wait: true)
-            sync(quiet: true, includeOpen: true)
+            sync(quiet: true)
         case .active:
             if connected, !syncing, Date().timeIntervalSince(lastSync ?? .distantPast) > 120 { sync(quiet: true) }
         default:

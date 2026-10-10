@@ -81,8 +81,15 @@ class DirDrive:
     def alive(self, file_id):
         return file_id == 'root' or os.path.exists(self._file(file_id))
 
+    def md5(self, file_id):
+        try:
+            with open(self._file(file_id), 'rb') as f:
+                return hashlib.md5(f.read()).hexdigest()
+        except OSError:
+            return None
+
     def children(self, folder):
-        return [{'id': k, 'name': v} for k, v in self._names().items()]
+        return [{'id': k, 'name': v, 'md5Checksum': self.md5(k)} for k, v in self._names().items()]
 
     def find(self, name, parent):
         return next((k for k, v in self._names().items() if v == name), None)
