@@ -157,6 +157,16 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(mine.pages[0].items.count, 6)
     }
 
+    /// Words written in one stroke are not scribbles, scratch-outs are, and both apps agree.
+    func testScribblesAsTheDesktopSeesThem() {
+        for sample in ScribbleSamples.all {
+            var pts: [Pt] = []
+            for i in stride(from: 0, to: sample.xy.count - 1, by: 2) { pts.append(Pt(x: sample.xy[i], y: sample.xy[i + 1], p: 0.5)) }
+            XCTAssertEqual(Geom.isScribble(pts), sample.scribble, sample.name)
+        }
+        XCTAssertTrue(ScribbleSamples.all.contains { $0.name == "word:tro" && !$0.scribble })
+    }
+
     func testGeometry() {
         var zigzag: [Pt] = []
         for i in 0..<60 { zigzag.append(Pt(x: i % 20 < 10 ? Double(i % 10) * 6 : 60 - Double(i % 10) * 6, y: 50 + Double(i) * 0.2)) }

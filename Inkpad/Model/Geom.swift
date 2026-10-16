@@ -119,8 +119,18 @@ enum Geom {
 
     static let minReversals = 3       // a scribble is at least four back-and-forth passes
     static let minLengthRatio = 2.5   // path length relative to its extent along the main axis
+    static let spreadFree = 0.3       // a scribble this thin (width across / length along) needs no extra passes
+    static let spreadStep = 0.25      // one more pass for each step wider than that
+    static let denseRatio = 7.0       // path length relative to extent of a rub over one small spot
 
     /// True when a stroke looks like a quick back-and-forth scratch-out.
+    ///
+    /// Writing turns a lot too, so turning alone does not decide: a word written in one stroke goes
+    /// round its letters, and a large one turns through 4π or 8π without being a scribble. What a
+    /// scratch-out does is go back over the same ground: each pass runs at least half the stroke's
+    /// length, it turns about half a turn at each end and seldom in between, and the more room it
+    /// spreads over the more passes it takes before it reads as a scribble. A rub that keeps
+    /// circling one small spot counts as well.
     static func isScribble(_ pts: [Pt]) -> Bool {
         let n = pts.count
         if n < 10 { return false }
@@ -134,8 +144,10 @@ enum Geom {
         let ang = 0.5 * atan2(2 * sxy, sxx - syy)
         let ux = cos(ang), uy = sin(ang)
         let t = pts.map { ($0.x - mx) * ux + ($0.y - my) * uy }
+        let across = pts.map { ($0.y - my) * ux - ($0.x - mx) * uy }
         let extent = t.max()! - t.min()!
         if extent < 5 { return false }
+        let width = across.max()! - across.min()!
         var length = 0.0
         var a = pts[0]
         for b in pts.dropFirst() {
@@ -143,8 +155,9 @@ enum Geom {
             a = b
         }
         if length < minLengthRatio * extent { return false }
-        // Direction reversals along the main axis, with hysteresis so jitter is ignored.
-        let h = max(extent * 0.15, 1.5)
+        // Direction reversals along the main axis, each at least half the stroke's length away
+        // from the one before, so that what letters do inside a word is not counted.
+        let h = extent * 0.5
         var direction = 0
         var ext = t[0]
         var reversals = 0
@@ -160,7 +173,38 @@ enum Geom {
                 if v < ext { ext = v } else if v - ext >= h { reversals += 1; direction = 1; ext = v }
             }
         }
-        return reversals >= minReversals
+        if reversals < minReversals { return false }
+        let turned = turning(pts, max(hypot(extent, width) / 40, 0.5))
+        if length >= denseRatio * extent && turned >= 4 * .pi { return true }
+        if turned - .pi * Double(reversals) > 2 * .pi { return false }   // it went round in loops besides: handwriting
+        let need = minReversals + max(0, Int(((width / extent - spreadFree) / spreadStep - 1e-9).rounded(.up)))
+        return reversals >= need
+    }
+
+    /// How far the direction of a stroke turns in all, left and right alike, measured on points
+    /// about `step` apart so that the tremor of the hand does not add up.
+    static func turning(_ pts: [Pt], _ step: Double) -> Double {
+        var kept = [pts[0]]
+        var run = 0.0
+        for (a, b) in zip(pts, pts.dropFirst()) {
+            run += hypot(b.x - a.x, b.y - a.y)
+            if run >= step {
+                kept.append(b)
+                run = 0
+            }
+        }
+        var total = 0.0
+        var prev: Double?
+        for (a, b) in zip(kept, kept.dropFirst()) {
+            let heading = atan2(b.y - a.y, b.x - a.x)
+            if let prev {
+                var d = (heading - prev + .pi).truncatingRemainder(dividingBy: 2 * .pi)
+                if d < 0 { d += 2 * .pi }
+                total += abs(d - .pi)
+            }
+            prev = heading
+        }
+        return total
     }
 
     /// Items a scribble covers: mostly inside its hull, or crossed repeatedly.
