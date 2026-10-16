@@ -165,6 +165,7 @@ final class ModelTests: XCTestCase {
             XCTAssertEqual(Geom.isScribble(pts), sample.scribble, sample.name)
         }
         XCTAssertTrue(ScribbleSamples.all.contains { $0.name == "word:tro" && !$0.scribble })
+        XCTAssertTrue(ScribbleSamples.all.contains { $0.name == "scratch-out over a line of words" && $0.scribble })
     }
 
     func testGeometry() {

@@ -122,6 +122,7 @@ enum Geom {
     static let spreadFree = 0.3       // a scribble this thin (width across / length along) needs no extra passes
     static let spreadStep = 0.25      // one more pass for each step wider than that
     static let denseRatio = 7.0       // path length relative to extent of a rub over one small spot
+    static let straightPasses = 4     // straight lines back and forth, each along the one before
 
     /// True when a stroke looks like a quick back-and-forth scratch-out.
     ///
@@ -130,10 +131,15 @@ enum Geom {
     /// scratch-out does is go back over the same ground: each pass runs at least half the stroke's
     /// length, it turns about half a turn at each end and seldom in between, and the more room it
     /// spreads over the more passes it takes before it reads as a scribble. A rub that keeps
-    /// circling one small spot counts as well.
+    /// circling one small spot counts as well, and so do straight lines drawn back and forth, each
+    /// close along the one before, however far they reach.
     static func isScribble(_ pts: [Pt]) -> Bool {
+        if pts.count < 10 { return false }
+        return scratched(pts) || straightPasses(pts)
+    }
+
+    private static func scratched(_ pts: [Pt]) -> Bool {
         let n = pts.count
-        if n < 10 { return false }
         let mx = pts.reduce(0) { $0 + $1.x } / Double(n)
         let my = pts.reduce(0) { $0 + $1.y } / Double(n)
         var sxx = 0.0, syy = 0.0, sxy = 0.0
@@ -179,6 +185,69 @@ enum Geom {
         if turned - .pi * Double(reversals) > 2 * .pi { return false }   // it went round in loops besides: handwriting
         let need = minReversals + max(0, Int(((width / extent - spreadFree) / spreadStep - 1e-9).rounded(.up)))
         return reversals >= need
+    }
+
+    /// Straight lines back and forth: each pass turns right round from the one before, runs close
+    /// along it, and is about as long. Handwriting has strokes like that (an M, a W) but not four
+    /// in a row lying on top of each other.
+    private static func straightPasses(_ pts: [Pt]) -> Bool {
+        let (legs, size) = Self.legs(pts)
+        var run = 1
+        for (a, b) in zip(legs, legs.dropFirst()) {
+            let la = hypot(a.2 - a.0, a.3 - a.1)
+            let lb = hypot(b.2 - b.0, b.3 - b.1)
+            let longer = max(la, lb), shorter = min(la, lb)
+            let back = ((a.2 - a.0) * (b.2 - b.0) + (a.3 - a.1) * (b.3 - b.1)) / (la * lb) <= -0.966   // 165° or more
+            // how far the middle of this pass is from the line of the one before
+            let mx = (b.0 + b.2) / 2, my = (b.1 + b.3) / 2
+            let off = abs((a.2 - a.0) * (a.1 - my) - (a.0 - mx) * (a.3 - a.1)) / la
+            if back && off <= 0.08 * longer && shorter >= 0.4 * longer && shorter >= 0.2 * size {
+                run += 1
+                if run >= straightPasses { return true }
+            } else {
+                run = 1
+            }
+        }
+        return false
+    }
+
+    /// A stroke as the straight runs it is made of, (x0, y0, x1, y1) each, leaving out the short
+    /// bits where it turns; and the size of the stroke.
+    private static func legs(_ pts: [Pt]) -> ([(Double, Double, Double, Double)], Double) {
+        let xs = pts.map(\.x), ys = pts.map(\.y)
+        let size = hypot(xs.max()! - xs.min()!, ys.max()! - ys.min()!)
+        if size < 5 { return ([], size) }
+        let step = size / 100
+        var r = [pts[0]]
+        var walked = 0.0
+        var lastKept = 0
+        for i in 1..<pts.count {
+            walked += hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+            if walked >= step {
+                r.append(pts[i])
+                lastKept = i
+                walked = 0
+            }
+        }
+        if lastKept != pts.count - 1 { r.append(pts[pts.count - 1]) }
+        // A run ends where the way on, a few steps ahead, leaves its direction by more than 45°.
+        var legs: [(Double, Double, Double, Double)] = []
+        var start = 0
+        if r.count > 2 {
+            for i in 1..<(r.count - 1) {
+                let j = min(i + 3, r.count - 1)
+                let lx = r[i].x - r[start].x, ly = r[i].y - r[start].y
+                let nx = r[j].x - r[i].x, ny = r[j].y - r[i].y
+                let a = hypot(lx, ly), b = hypot(nx, ny)
+                if a > 1e-9 && b > 1e-9 && (lx * nx + ly * ny) / (a * b) < 0.7071 {
+                    legs.append((r[start].x, r[start].y, r[i].x, r[i].y))
+                    start = i
+                }
+            }
+        }
+        legs.append((r[start].x, r[start].y, r[r.count - 1].x, r[r.count - 1].y))
+        let longest = legs.map { hypot($0.2 - $0.0, $0.3 - $0.1) }.max()!
+        return (legs.filter { hypot($0.2 - $0.0, $0.3 - $0.1) >= 0.15 * longest && longest > 0 }, size)
     }
 
     /// How far the direction of a stroke turns in all, left and right alike, measured on points
