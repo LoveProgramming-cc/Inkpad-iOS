@@ -30,6 +30,8 @@ enum L10n {
     }()
 
     static let extraEN: [String: String] = [
+        "宽松的涂抹删除": "Lenient scribble to erase",
+        "使用旧的判定方式：更容易删掉，但连笔写字时可能被当成涂抹": "Uses the earlier rule: scribbles erase more easily, but joined-up handwriting may be taken for one",
         "5 秒": "5 seconds",
         "10 秒": "10 seconds",
         "15 秒": "15 seconds",
@@ -87,6 +89,8 @@ enum L10n {
     ]
 
     static let extraJA: [String: String] = [
+        "宽松的涂抹删除": "ゆるいスクリブル消去",
+        "使用旧的判定方式：更容易删掉，但连笔写字时可能被当成涂抹": "以前の判定方法を使います。消しやすくなりますが、続け字がスクリブルと見なされることがあります",
         "5 秒": "5 秒",
         "10 秒": "10 秒",
         "15 秒": "15 秒",

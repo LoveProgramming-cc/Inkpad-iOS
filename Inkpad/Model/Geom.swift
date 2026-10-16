@@ -132,10 +132,53 @@ enum Geom {
     /// length, it turns about half a turn at each end and seldom in between, and the more room it
     /// spreads over the more passes it takes before it reads as a scribble. A rub that keeps
     /// circling one small spot counts as well, and so do straight lines drawn back and forth, each
-    /// close along the one before, however far they reach.
-    static func isScribble(_ pts: [Pt]) -> Bool {
+    /// close along the one before, however far they reach. `loose` asks for the earlier rule.
+    static func isScribble(_ pts: [Pt], loose: Bool = false) -> Bool {
         if pts.count < 10 { return false }
+        if loose { return Self.loose(pts) }
         return scratched(pts) || straightPasses(pts)
+    }
+
+    /// The earlier rule, kept for those who want it: four passes back and forth along the main
+    /// axis, each at least 15% of the stroke's length. It catches more, joined-up writing included.
+    private static func loose(_ pts: [Pt]) -> Bool {
+        let n = pts.count
+        let mx = pts.reduce(0) { $0 + $1.x } / Double(n)
+        let my = pts.reduce(0) { $0 + $1.y } / Double(n)
+        var sxx = 0.0, syy = 0.0, sxy = 0.0
+        for p in pts {
+            let dx = p.x - mx, dy = p.y - my
+            sxx += dx * dx; syy += dy * dy; sxy += dx * dy
+        }
+        let ang = 0.5 * atan2(2 * sxy, sxx - syy)
+        let ux = cos(ang), uy = sin(ang)
+        let t = pts.map { ($0.x - mx) * ux + ($0.y - my) * uy }
+        let extent = t.max()! - t.min()!
+        if extent < 5 { return false }
+        var length = 0.0
+        var a = pts[0]
+        for b in pts.dropFirst() {
+            length += hypot(b.x - a.x, b.y - a.y)
+            a = b
+        }
+        if length < minLengthRatio * extent { return false }
+        let h = max(extent * 0.15, 1.5)
+        var direction = 0
+        var ext = t[0]
+        var reversals = 0
+        for v in t.dropFirst() {
+            if direction == 0 {
+                if abs(v - ext) >= h {
+                    direction = v > ext ? 1 : -1
+                    ext = v
+                }
+            } else if direction == 1 {
+                if v > ext { ext = v } else if ext - v >= h { reversals += 1; direction = -1; ext = v }
+            } else {
+                if v < ext { ext = v } else if v - ext >= h { reversals += 1; direction = 1; ext = v }
+            }
+        }
+        return reversals >= minReversals
     }
 
     private static func scratched(_ pts: [Pt]) -> Bool {

@@ -761,7 +761,7 @@ extension CanvasView {
                 item.pts.append(Pt(x: px, y: py, p: last.p))
             }
             item.updateBBox()
-            if !marker && !op.fixed && op.rule == nil && tools.p.scribbleErase && Geom.isScribble(item.pts) {
+            if !marker && !op.fixed && op.rule == nil && tools.p.scribbleErase && Geom.isScribble(item.pts, loose: tools.p.scribbleLoose) {
                 let targets = Geom.scribbleTargets(item.pts, page.items)
                 if !targets.isEmpty {
                     // Scribble to erase, recorded as two steps: the scribble as ordinary ink, then

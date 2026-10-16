@@ -163,6 +163,8 @@ final class ModelTests: XCTestCase {
             var pts: [Pt] = []
             for i in stride(from: 0, to: sample.xy.count - 1, by: 2) { pts.append(Pt(x: sample.xy[i], y: sample.xy[i + 1], p: 0.5)) }
             XCTAssertEqual(Geom.isScribble(pts), sample.scribble, sample.name)
+            // The lenient setting keeps the earlier rule, which takes joined-up "tro" for a scribble.
+            if sample.name == "word:tro" { XCTAssertTrue(Geom.isScribble(pts, loose: true)) }
         }
         XCTAssertTrue(ScribbleSamples.all.contains { $0.name == "word:tro" && !$0.scribble })
         XCTAssertTrue(ScribbleSamples.all.contains { $0.name == "scratch-out over a line of words" && $0.scribble })

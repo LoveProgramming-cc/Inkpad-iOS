@@ -366,6 +366,7 @@ struct SettingsView: View {
                 }
                 Section(tr("书写")) {
                     toggle($tools.p.scribbleErase, "涂画以擦除", "在字迹上来回涂抹即可删除")
+                    toggle($tools.p.scribbleLoose, "宽松的涂抹删除", "使用旧的判定方式：更容易删掉，但连笔写字时可能被当成涂抹")
                     toggle($tools.p.holdShape, "长按绘制规则形状", "画完停住片刻，笔迹变成直线、矩形或椭圆")
                     toggle($tools.p.fingerDraw, "用手指书写", "关闭时手指只用于滚动和缩放")
                     toggle($tools.p.crosshair, "显示十字光标", "关闭后书写时只显示十字中心的小圆点")
