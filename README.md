@@ -47,12 +47,13 @@ tools/install.sh
 | **SideStore / AltStore** | 7 天，自动续 | 免费 | 在后台替你续签。把 `tools/build_ipa.sh` 生成的 `dist/Inkpad.ipa` 交给它即可 |
 | **`tools/auto_renew.sh on`** | 7 天，自动续 | 免费 | 让这台 Mac 每 6 小时检查一次，iPad 在同一 Wi-Fi 下就重新签名安装 |
 | 手动 `tools/install.sh` | 7 天 | 免费 | 到期后跑一下 |
+| 提前续签 `tools/install.sh --renew --all` | 从现在起 7 天 | 免费 | 不必等到期：把 Xcode 缓存的旧描述文件移到一边，让它重新申请一份 |
 
 几点事实：
 
 - 过期只是**打不开 App**，数据不会丢：笔记仍在 App 的文档目录里（"文件"App › 我的 iPad › Inkpad），而且已经同步到了 Google Drive。重新签名安装后一切照旧。
 - SideStore / AltStore 会给 App 换一个 Bundle ID，所以它和用 Xcode 装的那份是两个独立的 App。选定一种方式用下去即可（换方式也只需重新登录 Drive 同步一次）。
-- `auto_renew.sh` 依赖 Xcode 的自动签名：Xcode 要保持登录 Apple ID，iPad 要在 Xcode › Window › Devices and Simulators 里勾选 *Connect via network*。Xcode 只在旧描述文件到期后才签发新的，所以到期当天可能有几个小时打不开，直到下一次检查。这个脚本没有在真机上验证过。
+- `auto_renew.sh` 依赖 Xcode 的自动签名：Xcode 要保持登录 Apple ID，iPad 要在 Xcode › Window › Devices and Simulators 里勾选 *Connect via network*。Xcode 只在旧描述文件到期后才签发新的，所以到期当天可能有几个小时打不开，直到下一次检查；手动跑 `install.sh --renew` 可以随时提前续签。这个脚本没有在真机上验证过。
 
 ## Google Drive 同步
 

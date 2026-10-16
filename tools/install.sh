@@ -6,9 +6,12 @@
 #   tools/install.sh <udid|name>   that device (part of its name will do: "iPhone")
 #   tools/install.sh --all         every device within reach
 #   tools/install.sh --list        only show the devices
+#   tools/install.sh --renew …     sign afresh, for another 7 days from now (with any of the above)
 #
 # Installing over an existing copy keeps its notebooks and settings. With a free Apple ID
-# the signature lasts 7 days; running this again renews it (see README).
+# the signature lasts 7 days. Xcode keeps using the profile it has until that runs out, so a
+# plain run before then signs only until the same day; --renew puts that profile aside first,
+# and Xcode asks Apple for a new one.
 set -euo pipefail
 ROOT="${0:A:h:h}"
 cd "$ROOT"
@@ -34,7 +37,11 @@ UDIDS=("${(@f)$(print -r -- "$FOUND" | cut -f1)}")
 NAMES=("${(@f)$(print -r -- "$FOUND" | cut -f2)}")
 [[ -z "$FOUND" ]] && UDIDS=() NAMES=()
 
-WANT="${1:-}"
+RENEW=0
+WANT=""
+for ARG in "$@"; do
+  if [[ "$ARG" == "--renew" ]]; then RENEW=1; else WANT="$ARG"; fi
+done
 if [[ "$WANT" == "--list" ]]; then
   for i in {1..${#UDIDS}}; do echo "${UDIDS[$i]}  ${NAMES[$i]}"; done
   exit 0
@@ -74,6 +81,27 @@ if (( ${#TARGETS} == 0 )); then
   exit 2
 fi
 
+# The profiles Xcode keeps for the app itself, put aside (not deleted) so that it fetches a new
+# one; they come back if nothing could be built.
+ASIDE=""
+if (( RENEW )); then
+  PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  APP_ID=$(grep -o "PRODUCT_BUNDLE_IDENTIFIER = [^;]*" Inkpad.xcodeproj/project.pbxproj | grep -v "\.tests$\|\.uitests$\|= NO$" | head -1 | sed 's/.*= //')
+  ASIDE="${${TMPDIR:-/tmp}%/}/inkpad-old-profiles/$(date +%Y%m%d-%H%M%S)"
+  for F in "$PROFILES"/*.mobileprovision(N); do
+    ID=$(security cms -D -i "$F" 2>/dev/null | plutil -extract Entitlements.application-identifier raw - 2>/dev/null || true)
+    if [[ "$ID" == *".$APP_ID" ]]; then
+      mkdir -p "$ASIDE"
+      mv "$F" "$ASIDE/"
+    fi
+  done
+  if [[ -d "$ASIDE" ]]; then echo "Old signing profile put aside in $ASIDE"; else ASIDE=""; fi
+fi
+put_back() {
+  [[ -n "$ASIDE" ]] && mv "$ASIDE"/*.mobileprovision(N) "$PROFILES/" 2>/dev/null && echo "Put the old signing profile back." >&2
+  ASIDE=""
+}
+
 for DEVICE in $TARGETS; do
   echo "Building for $DEVICE…"
   LOG=$(mktemp)
@@ -82,10 +110,12 @@ for DEVICE in $TARGETS; do
     -destination "id=$DEVICE" -derivedDataPath "$BUILD" -allowProvisioningUpdates -allowProvisioningDeviceRegistration build > "$LOG" 2>&1; then
     grep -E "error:" "$LOG" | sort -u >&2 || true
     rm -f "$LOG"
+    put_back
     echo "Build failed, nothing was installed. If it says 'No Accounts': sign in under Xcode > Settings > Accounts, then run this again." >&2
     exit 1
   fi
   rm -f "$LOG"
+  ASIDE=""   # a new profile was made: the old one is not needed any more
   APP="$BUILD/Build/Products/Release-iphoneos/Inkpad.app"
 
   echo "Installing…"
