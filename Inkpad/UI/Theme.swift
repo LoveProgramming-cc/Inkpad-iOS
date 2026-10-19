@@ -342,3 +342,26 @@ struct ThumbFrame: ViewModifier {
 extension View {
     func thumb(selected: Bool = false, radius: CGFloat = 2) -> some View { modifier(ThumbFrame(selected: selected, radius: radius)) }
 }
+
+/// Keeps a bar's leading end clear of the window's close and resize buttons, which iPadOS
+/// puts in the top corner of a window that is not full screen.
+struct ClearsWindowControls: ViewModifier {
+    @State private var lead: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, lead)
+            .background {
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { lead = Self.corner(g) }
+                        .onChange(of: Self.corner(g)) { _, value in lead = value }
+                }
+            }
+    }
+
+    private static func corner(_ g: GeometryProxy) -> CGFloat {
+        if #available(iOS 26.0, *) { return g.containerCornerInsets.topLeading.width }
+        return 0
+    }
+}

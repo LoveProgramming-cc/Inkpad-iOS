@@ -507,6 +507,7 @@ struct LibraryView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 52)
+            .modifier(ClearsWindowControls())
 
             if inside { crumbs }
             if selecting { selectionBar } else {

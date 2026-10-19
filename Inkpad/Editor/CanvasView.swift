@@ -212,6 +212,7 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
         super.layoutSubviews()
         guard bounds.width > 0, bounds.height > 0, bounds.size != lastSize else { return }
         lastSize = bounds.size
+        regainScrolling()   // the window was resized, perhaps after being moved
         placeMinimap()
         ruler?.resize()
         if slots.isEmpty || across {

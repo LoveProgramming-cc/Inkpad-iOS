@@ -52,6 +52,7 @@ final class StrokeGesture: UIGestureRecognizer {
     weak var canvas: CanvasView?
     private var touch: UITouch?
     private var second: UITouch?          // a finger beside the one carrying the selection: a copy goes along
+    private var live = false              // the canvas was told of a touch and not yet of its end
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let canvas else {
@@ -62,6 +63,7 @@ final class StrokeGesture: UIGestureRecognizer {
             if touch == nil, canvas.accepts(t) {
                 touch = t
                 state = .began
+                live = true
                 canvas.strokeBegan(t, event)
             } else if let current = touch, second == nil, t.type == .direct, canvas.copyUnderFingers(current) {
                 second = t
@@ -69,6 +71,7 @@ final class StrokeGesture: UIGestureRecognizer {
                 // A second finger: this is a scroll or a pinch, not writing.
                 canvas.strokeInterrupted(current)
                 touch = nil
+                live = false
                 state = .cancelled
             } else {
                 ignore(t, for: event)
@@ -85,22 +88,32 @@ final class StrokeGesture: UIGestureRecognizer {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         if let touch, let second, touches.contains(second), !touches.contains(touch) {
             // A finger fewer than the gesture needs ends it where it is.
+            live = false
             canvas?.strokeEnded(touch, event)
             state = .ended
             return
         }
         guard let touch, touches.contains(touch) else { return }
+        live = false
         canvas?.strokeEnded(touch, event)
         state = .ended
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let touch, touches.contains(touch) else { return }
+        live = false
         canvas?.strokeCancelled()
         state = .cancelled
     }
 
     override func reset() {
+        // The system can take a touch away without saying so, as when it moves the window that
+        // is not in front: the canvas must still hear the stroke is over, or the page stays
+        // unable to scroll until the pencil next writes.
+        if live {
+            live = false
+            canvas?.strokeCancelled()
+        }
         touch = nil
         second = nil
     }
@@ -153,7 +166,8 @@ final class SelectionBar: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func button(_ symbol: String, _ label: String, tint: UIColor? = nil, menu: UIMenu? = nil, action: (() -> Void)? = nil) {
+    @discardableResult
+    func button(_ symbol: String, _ label: String, tint: UIColor? = nil, menu: UIMenu? = nil, action: (() -> Void)? = nil) -> UIButton {
         var config = UIButton.Configuration.plain()
         config.image = Lucide.image(symbol)
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
@@ -168,7 +182,69 @@ final class SelectionBar: UIView {
             b.showsMenuAsPrimaryAction = true
         }
         stack.addArrangedSubview(b)
+        return b
     }
+}
+
+/// The colours a selection can be given, five to a row, as the desktop's popover has them.
+final class SwatchGrid: UIViewController, UIPopoverPresentationControllerDelegate {
+    private let colors: [RGB]
+    private let pick: (RGB) -> Void
+
+    init(colors: [RGB], pick: @escaping (RGB) -> Void) {
+        self.colors = colors
+        self.pick = pick
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .popover
+        popoverPresentationController?.delegate = self
+        let rows = (colors.count + 4) / 5
+        preferredContentSize = CGSize(width: 5 * 40 + 4 * 4 + 20, height: CGFloat(rows) * 40 + CGFloat(rows - 1) * 4 + 20)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.popoverUI
+        let grid = UIStackView()
+        grid.axis = .vertical
+        grid.spacing = 4
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 10),
+            grid.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+        ])
+        for start in stride(from: 0, to: colors.count, by: 5) {
+            let row = UIStackView()
+            row.axis = .horizontal
+            row.spacing = 4
+            for (k, c) in colors[start..<min(start + 5, colors.count)].enumerated() {
+                let swatch = UIGraphicsImageRenderer(size: CGSize(width: 26, height: 26)).image { ctx in
+                    c.ui.setFill()
+                    ctx.cgContext.fillEllipse(in: CGRect(x: 1, y: 1, width: 24, height: 24))
+                    UIColor.gray.withAlphaComponent(0.6).setStroke()
+                    ctx.cgContext.strokeEllipse(in: CGRect(x: 1, y: 1, width: 24, height: 24))
+                }.withRenderingMode(.alwaysOriginal)
+                var config = UIButton.Configuration.plain()
+                config.image = swatch
+                config.background.cornerRadius = 10
+                let b = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
+                    guard let self else { return }
+                    self.dismiss(animated: true)
+                    self.pick(c)
+                })
+                b.accessibilityLabel = tr("颜色") + " \(start + k + 1)"
+                b.widthAnchor.constraint(equalToConstant: 40).isActive = true
+                b.heightAnchor.constraint(equalToConstant: 40).isActive = true
+                row.addArrangedSubview(b)
+            }
+            grid.addArrangedSubview(row)
+        }
+    }
+
+    // A popover on an iPhone too, rather than a sheet over the whole screen.
+    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle { .none }
 }
 
 /// A few lines of text for a text box or a sticky note.
@@ -248,6 +324,11 @@ extension CanvasView {
         pencil.delegate = self
         addInteraction(pencil)
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:))))
+        // Coming back to the front, the page can be moved again whatever happened to the touch
+        // that was down when the window went behind or was moved.
+        for name in [UIScene.didActivateNotification, UIWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(regainScrolling), name: name, object: nil)
+        }
         applyInputSettings()
         #if DEBUG
         // There is no pencil to squeeze in the simulator: the tests ask for the palette this way.
@@ -352,6 +433,16 @@ extension CanvasView {
         // An ordinary writing press is about 1; twice that is as hard as the pens respond to.
         // Speed has its say beside the pressure: a quick line is thinner however hard it is pressed.
         return max(0, min(1, force / 2 + (mouseP - 0.5) * 0.7))
+    }
+
+    @objc func regainScrolling() {
+        // Nothing is touching the canvas: anything still under way was cut off. Turning the
+        // page's own gestures off and on again also clears whatever they were still holding on
+        // to, which is what a stroke of the pencil used to do by the way.
+        guard let strokeGesture, strokeGesture.state == .possible else { return }
+        if op != nil { cancelOp() }
+        setScrolling(false)
+        setScrolling(true)
     }
 
     private func setScrolling(_ on: Bool) {
@@ -1089,26 +1180,27 @@ extension CanvasView {
         }
         if selBar.stack.arrangedSubviews.isEmpty { buildSelBar() }
         let size = selBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        // The undo and tool option pills float along the top: the bar stays clear of them,
+        // going below the selection when there is no room above it.
+        let top: CGFloat = bounds.height > 240 ? 64 : 6
         var y = rect.minY - size.height - 14
-        if y < 6 { y = min(bounds.height - size.height - 6, rect.maxY + 18) }
+        if y < top { y = rect.maxY + 18 }
+        y = max(top, min(bounds.height - size.height - 6, y))
         let x = min(max(6, rect.midX - size.width / 2), bounds.width - size.width - 6)
         selBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
         selBar.isHidden = false
     }
 
     private func buildSelBar() {
-        let colors = UIMenu(title: tr("颜色"), options: .displayInline, children: palette.map { c in
-            let swatch = UIGraphicsImageRenderer(size: CGSize(width: 22, height: 22)).image { ctx in
-                c.ui.setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(x: 1, y: 1, width: 20, height: 20))
-                UIColor.gray.setStroke()
-                ctx.cgContext.strokeEllipse(in: CGRect(x: 1, y: 1, width: 20, height: 20))
-            }.withRenderingMode(.alwaysOriginal)
-            return UIAction(title: "", image: swatch) { [weak self] _ in self?.recolorSelection(c) }
-        })
-        if #available(iOS 17.0, *) { colors.preferredElementSize = .small }
         // The desktop's bar: colour | cut, copy, duplicate, delete, more.
-        selBar.button("palette", tr("颜色"), menu: UIMenu(children: [colors]))
+        weak var colorButton: UIButton?
+        colorButton = selBar.button("palette", tr("颜色")) { [weak self] in
+            guard let self, let colorButton else { return }
+            let grid = SwatchGrid(colors: palette) { [weak self] c in self?.recolorSelection(c) }
+            grid.popoverPresentationController?.sourceView = colorButton
+            grid.popoverPresentationController?.sourceRect = colorButton.bounds
+            self.host?.present(grid, animated: true)
+        }
         selBar.separator()
         selBar.button("scissors", tr("剪切")) { [weak self] in
             self?.copySelection()

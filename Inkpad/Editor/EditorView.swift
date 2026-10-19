@@ -186,7 +186,7 @@ struct EditorView: View {
 
     private var header: some View {
         VStack(spacing: 0) {
-            headerRow
+            headerRow.modifier(ClearsWindowControls())
             if compact {
                 ScrollView(.horizontal, showsIndicators: false) { toolGroup.padding(.horizontal, 8) }
                     .frame(height: 44)

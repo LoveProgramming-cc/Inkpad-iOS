@@ -500,6 +500,28 @@ final class EditorUITests: XCTestCase {
         XCTAssertFalse(app.buttons["剪切"].waitForExistence(timeout: 1), "a tap on handwriting selects nothing")
     }
 
+    func testZZSelectionNearTheTop() {
+        open("课堂笔记")
+        app.buttons["套索"].tap()
+        at(0.72, 0.69).tap()
+        XCTAssertTrue(app.buttons["剪切"].waitForExistence(timeout: 3))
+        // Carried up to the top of the view, the selection has its bar below it, clear of the
+        // undo and tool option pills.
+        at(0.72, 0.69).press(forDuration: 0.05, thenDragTo: at(0.72, 0.13), withVelocity: .slow, thenHoldForDuration: 0.1)
+        sleep(1)
+        let cut = app.buttons["剪切"]
+        XCTAssertTrue(cut.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(cut.frame.minY, app.buttons["撤销"].frame.maxY)
+        shot("65-bar-near-top")
+        // The colours open as a grid of swatches beside the button.
+        app.buttons["颜色"].tap()
+        XCTAssertTrue(app.buttons["颜色 6"].waitForExistence(timeout: 3))
+        shot("66-selection-colours")
+        app.buttons["颜色 6"].tap()
+        XCTAssertFalse(app.buttons["颜色 6"].waitForExistence(timeout: 1))
+        shot("67-recoloured")
+    }
+
     func testZZSettingsWithAccount() {
         app.terminate()
         app.launchArguments = ["-demo", "-resetPrefs", "-fakeAccount", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
