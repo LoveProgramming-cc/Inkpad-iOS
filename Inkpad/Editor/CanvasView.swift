@@ -208,6 +208,18 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
 
     // MARK: layout
 
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // A finger that moved the page of a window not in front can be taken by the system
+        // without the page's gestures hearing it end; they then wait for it for ever and the
+        // page no longer moves (a stroke of the pencil used to free them by the way). So each
+        // time a touch comes down on its own, before it reaches them, they are started afresh.
+        if let event, event.type == .touches,
+           !(event.allTouches ?? []).contains(where: { $0.phase == .moved || $0.phase == .stationary }) {
+            freshScrolling()
+        }
+        return super.hitTest(point, with: event)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard bounds.width > 0, bounds.height > 0, bounds.size != lastSize else { return }

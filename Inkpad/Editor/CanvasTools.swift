@@ -445,6 +445,16 @@ extension CanvasView {
         setScrolling(true)
     }
 
+    /// Starts the page's gestures afresh, leaving them off if they were put off on purpose
+    /// (the palm still resting after the pencil).
+    func freshScrolling() {
+        for g in [scroll.panGestureRecognizer, scroll.pinchGestureRecognizer].compactMap({ $0 }) where g.isEnabled {
+            if g.state != .possible || g.numberOfTouches > 0 { log("page gesture was stuck (\(g.state.rawValue), \(g.numberOfTouches) touches): reset") }
+            g.isEnabled = false
+            g.isEnabled = true
+        }
+    }
+
     private func setScrolling(_ on: Bool) {
         scroll.panGestureRecognizer.isEnabled = on
         scroll.pinchGestureRecognizer?.isEnabled = on
