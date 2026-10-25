@@ -53,6 +53,7 @@ final class StrokeGesture: UIGestureRecognizer {
     private var touch: UITouch?
     private var second: UITouch?          // a finger beside the one carrying the selection: a copy goes along
     private var live = false              // the canvas was told of a touch and not yet of its end
+    private var idle: UITouch?            // a finger carried through only to set the gestures going again
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let canvas else {
@@ -73,6 +74,12 @@ final class StrokeGesture: UIGestureRecognizer {
                 touch = nil
                 live = false
                 state = .cancelled
+            } else if touch == nil, idle == nil, t.type == .direct {
+                // Every finger that only moves the page goes through as a stroke that draws
+                // nothing as well: as it ends, it sets all the window's gestures going again,
+                // which after a swipe on a window that is not in front nothing else does.
+                idle = t
+                state = .began
             } else {
                 ignore(t, for: event)
             }
@@ -80,12 +87,18 @@ final class StrokeGesture: UIGestureRecognizer {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let idle, touches.contains(idle) { state = .changed }
         guard let touch, touches.contains(touch) else { return }
         canvas?.strokeMoved(touch, event)
         state = .changed
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let idle, touches.contains(idle) {
+            self.idle = nil
+            state = .ended
+            return
+        }
         if let touch, let second, touches.contains(second), !touches.contains(touch) {
             // A finger fewer than the gesture needs ends it where it is.
             live = false
@@ -100,6 +113,11 @@ final class StrokeGesture: UIGestureRecognizer {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let idle, touches.contains(idle) {
+            self.idle = nil
+            state = .cancelled
+            return
+        }
         guard let touch, touches.contains(touch) else { return }
         live = false
         canvas?.strokeCancelled()
@@ -116,6 +134,7 @@ final class StrokeGesture: UIGestureRecognizer {
         }
         touch = nil
         second = nil
+        idle = nil
     }
 
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
@@ -360,7 +379,12 @@ extension CanvasView {
         if !slots.isEmpty { updateZoomLimits() }
     }
 
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    /// Together with the page's own gestures only, not with the window's (those by which a
+    /// window that is not in front is scrolled or brought forward).
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        guard let view = other.view else { return false }
+        return view === self || view.isDescendant(of: self)
+    }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         // Touches on the selection bar and the map belong to their buttons.
@@ -443,16 +467,6 @@ extension CanvasView {
         if op != nil { cancelOp() }
         setScrolling(false)
         setScrolling(true)
-    }
-
-    /// Starts the page's gestures afresh, leaving them off if they were put off on purpose
-    /// (the palm still resting after the pencil).
-    func freshScrolling() {
-        for g in [scroll.panGestureRecognizer, scroll.pinchGestureRecognizer].compactMap({ $0 }) where g.isEnabled {
-            if g.state != .possible || g.numberOfTouches > 0 { log("page gesture was stuck (\(g.state.rawValue), \(g.numberOfTouches) touches): reset") }
-            g.isEnabled = false
-            g.isEnabled = true
-        }
     }
 
     private func setScrolling(_ on: Bool) {
