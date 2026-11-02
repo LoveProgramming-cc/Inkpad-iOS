@@ -101,9 +101,10 @@ put_back() {
   [[ -n "$ASIDE" ]] && mv "$ASIDE"/*.mobileprovision(N) "$PROFILES/" 2>/dev/null && echo "Put the old signing profile back." >&2
   ASIDE=""
 }
+trap 'put_back; exit 130' INT TERM
 
 for DEVICE in $TARGETS; do
-  echo "Building for $DEVICE…"
+  echo "Building for $DEVICE… (after an Xcode update the first build takes several minutes)"
   LOG=$(mktemp)
   # Device registration: a device this Apple ID has not signed for before is added to its profile.
   if ! xcodebuild -project Inkpad.xcodeproj -scheme Inkpad -configuration Release \
