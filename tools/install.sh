@@ -28,8 +28,8 @@ except Exception:
     devices = []
 for d in devices:
     hw, link, about = d.get('hardwareProperties', {}), d.get('connectionProperties', {}), d.get('deviceProperties', {})
-    if hw.get('deviceType') in ('iPad', 'iPhone') and hw.get('reality') == 'physical' and link.get('tunnelState') != 'unavailable':
-        print('%s\t%s (%s)' % (hw.get('udid', ''), about.get('name', '?'), hw.get('marketingName') or hw.get('deviceType')))
+    if hw.get('deviceType') in ('iPad', 'iPhone') and hw.get('reality') != 'simulated' and link.get('tunnelState') != 'unavailable':
+        print('%s\t%s (%s)' % (hw.get('udid', ''), about.get('name', '?'), hw.get('marketingName') or hw.get('productType') or hw.get('deviceType')))
 PY
 )
 rm -f "$LIST"
