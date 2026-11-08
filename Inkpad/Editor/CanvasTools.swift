@@ -62,8 +62,17 @@ final class StrokeGesture: UIGestureRecognizer {
         }
         for t in touches {
             if touch == nil, canvas.accepts(t) {
+                if let idle {
+                    // A finger, or the palm, was already down and only moving the page. What writes
+                    // takes the gesture over: that finger is let go, so that its lifting (or the
+                    // system cancelling a palm) does not end the gesture under the stroke, which
+                    // would throw the stroke away. That was the first stroke lost after a swipe, or
+                    // when the hand came down before the pencil.
+                    self.idle = nil
+                    ignore(idle, for: event)
+                }
                 touch = t
-                state = .began
+                state = state == .possible ? .began : .changed
                 live = true
                 canvas.strokeBegan(t, event)
             } else if let current = touch, second == nil, t.type == .direct, canvas.copyUnderFingers(current) {
@@ -96,8 +105,11 @@ final class StrokeGesture: UIGestureRecognizer {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         if let idle, touches.contains(idle) {
             self.idle = nil
-            state = .ended
-            return
+            // Only a gesture that nothing else is writing in ends with it.
+            if touch == nil {
+                state = .ended
+                return
+            }
         }
         if let touch, let second, touches.contains(second), !touches.contains(touch) {
             // A finger fewer than the gesture needs ends it where it is.
@@ -115,8 +127,11 @@ final class StrokeGesture: UIGestureRecognizer {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         if let idle, touches.contains(idle) {
             self.idle = nil
-            state = .cancelled
-            return
+            // The system cancels a resting palm: that must not cancel the pencil's stroke as well.
+            if touch == nil {
+                state = .cancelled
+                return
+            }
         }
         guard let touch, touches.contains(touch) else { return }
         live = false
