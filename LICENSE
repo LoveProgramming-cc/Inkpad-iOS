@@ -32,4 +32,13 @@ Those parts remain subject to whatever terms their original authors set; this
 license covers only what was added here and grants nothing beyond what those
 terms allow. The Lucide icons are distributed under the ISC License.
 
+Exception for the other editions of Inkpad. The copyright holder also permits
+the Software's code, in whole or in part, to be used, translated and adapted in
+the other editions of Inkpad that the copyright holder publishes at
+https://github.com/LoveProgramming-cc (Inkpad for GNOME, Inkpad Web and Inkpad
+for Android), which are released under the GNU General Public License, version
+3 or (at your option) any later version. Within those editions such code is
+under that license like the rest of them. This repository itself, and anything
+derived from it other than through those editions, stays under the terms above.
+
 For anything this license does not permit, ask the copyright holder first.
