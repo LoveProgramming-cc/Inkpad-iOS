@@ -12,6 +12,7 @@ import UIKit
 final class GoogleAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
     private var listener: NWListener?
+    private var listenerReady: CheckedContinuation<UInt16, Error>?
     private var waiting: CheckedContinuation<[String: String], Error>?
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
@@ -100,7 +101,7 @@ final class GoogleAuth: NSObject, ASWebAuthenticationPresentationContextProvidin
         self.listener = listener
         listener.newConnectionHandler = { [weak self] connection in
             connection.start(queue: .main)
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, _, _ in
                 let head = String(decoding: data ?? Data(), as: UTF8.self).split(separator: "\r\n").first.map(String.init) ?? ""
                 let parts = head.split(separator: " ")
                 var query: [String: String] = [:]
@@ -112,10 +113,10 @@ final class GoogleAuth: NSObject, ASWebAuthenticationPresentationContextProvidin
                 let body = "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Inkpad</title>"
                     + "<body style=\"font-family:sans-serif;text-align:center;margin-top:18vh\"><h2>\(text)</h2></body>"
                 let reply = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n" + body
-                connection.send(content: Data(reply.utf8), completion: .contentProcessed { _ in
+                connection.send(content: Data(reply.utf8), completion: .contentProcessed { [weak self, query] _ in
                     connection.cancel()
                     if done {
-                        Task { @MainActor in
+                        Task { @MainActor [weak self, query] in
                             self?.finish(query["code"] != nil ? .success(query) : .failure(DriveError(tr("授权未完成"))))
                         }
                     }
@@ -123,17 +124,19 @@ final class GoogleAuth: NSObject, ASWebAuthenticationPresentationContextProvidin
             }
         }
         return try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
-            listener.stateUpdateHandler = { state in
-                guard !resumed else { return }
-                switch state {
-                case .ready:
-                    resumed = true
-                    continuation.resume(returning: listener.port?.rawValue ?? 0)
-                case .failed(let error):
-                    resumed = true
-                    continuation.resume(throwing: error)
-                default: break
+            listenerReady = continuation
+            listener.stateUpdateHandler = { [weak self] state in
+                Task { @MainActor [weak self] in
+                    guard let self, let continuation = self.listenerReady else { return }
+                    switch state {
+                    case .ready:
+                        self.listenerReady = nil
+                        continuation.resume(returning: listener.port?.rawValue ?? 0)
+                    case .failed(let error):
+                        self.listenerReady = nil
+                        continuation.resume(throwing: error)
+                    default: break
+                    }
                 }
             }
             listener.start(queue: .main)

@@ -3,8 +3,48 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
+
+/* Begin PBXBuildFile section */
+		55679106B4DCDC93F38CE1F0 /* AppModel.swift */ = {isa = PBXBuildFile; fileRef = EDF4C5E38CD3D826D35317B3 /* AppModel.swift */; };
+		456373B8D445BD1D3D43BFCF /* Assets.xcassets */ = {isa = PBXBuildFile; fileRef = CD9A2E51D15422A50F7122BF /* Assets.xcassets */; };
+		CFB686AA3AE3645185C1CA79 /* Demo.swift */ = {isa = PBXBuildFile; fileRef = 58518371A516F97984B06B60 /* Demo.swift */; };
+		20D676159670BBFCF770787B /* CanvasExtras.swift */ = {isa = PBXBuildFile; fileRef = D0A7897E805180CD6B5F2BA0 /* CanvasExtras.swift */; };
+		1A16B66FF784FC9A59D7D81B /* CanvasTools.swift */ = {isa = PBXBuildFile; fileRef = AC12AEDFE9810BD9489335B7 /* CanvasTools.swift */; };
+		CF033C503F6B45E0FCC22C87 /* CanvasView.swift */ = {isa = PBXBuildFile; fileRef = 088AE7559B2009BCBF46F6D3 /* CanvasView.swift */; };
+		2488747338224E7015EC9D87 /* EditorView.swift */ = {isa = PBXBuildFile; fileRef = 06E7E9F7A2AEE3F8C090044D /* EditorView.swift */; };
+		2B6FB96F2E2B6F3EFE87C0B3 /* PencilPalette.swift */ = {isa = PBXBuildFile; fileRef = 6E2E1CFDA272C7164F308434 /* PencilPalette.swift */; };
+		A24DFA3AFCEF5EEF654064B2 /* Tools.swift */ = {isa = PBXBuildFile; fileRef = 590C86588FA8D8E267B3761D /* Tools.swift */; };
+		D8AB2E18759CB6D40D4A8E3B /* InkpadApp.swift */ = {isa = PBXBuildFile; fileRef = 4DFD382E64EB8065A02D76A7 /* InkpadApp.swift */; };
+		4407CB270CD27C5300936CFB /* L10n.swift */ = {isa = PBXBuildFile; fileRef = 9496B812F36D264C3D51D747 /* L10n.swift */; };
+		CE9CEF7669C7B394702506D4 /* LibraryView.swift */ = {isa = PBXBuildFile; fileRef = 3C0B70E73150892EFCFC7DEB /* LibraryView.swift */; };
+		47DF64DC87ED2C02A7122608 /* Sheets.swift */ = {isa = PBXBuildFile; fileRef = ED23BD87D40C7A48040CECF2 /* Sheets.swift */; };
+		8F6ED24EA444C172D5395C0C /* Store.swift */ = {isa = PBXBuildFile; fileRef = 86D6AEDCD568F6717AD040E8 /* Store.swift */; };
+		E1EECD4DB6695852153FF7E1 /* Cover.swift */ = {isa = PBXBuildFile; fileRef = A0D76C5C312B1FEAC0EFE21A /* Cover.swift */; };
+		A0B988EBF07111452E6C16ED /* Document.swift */ = {isa = PBXBuildFile; fileRef = 5133A0A5F3A3C054479EFC5D /* Document.swift */; };
+		CF4F384837D56DBC43589EDA /* Geom.swift */ = {isa = PBXBuildFile; fileRef = 776DAF877F3C4189D4F0DC16 /* Geom.swift */; };
+		FF1F0CE1C92E4D7015326C67 /* Goodnotes.swift */ = {isa = PBXBuildFile; fileRef = FB853DD236810C9C7CF38321 /* Goodnotes.swift */; };
+		F4FC0BF15F919FBB38F819E2 /* Items.swift */ = {isa = PBXBuildFile; fileRef = E1DF8AE27B240E5852E9B3A8 /* Items.swift */; };
+		28A60FCF39565D1643791C2C /* Page.swift */ = {isa = PBXBuildFile; fileRef = 0F0A976850934968C93D905A /* Page.swift */; };
+		292B2CD85893D5C2F062A01D /* Zip.swift */ = {isa = PBXBuildFile; fileRef = B03CBE25EADD723461C8FD3D /* Zip.swift */; };
+		3D5FC3218DD83CD3E0C1C885 /* Platform.swift */ = {isa = PBXBuildFile; fileRef = A2A2AC5E9EAAAA36ED5E66D2 /* Platform.swift */; };
+		B21BEB8F7A02B0D665754FC8 /* en.json */ = {isa = PBXBuildFile; fileRef = BF72E0606D709668EEEA5216 /* en.json */; };
+		436F66CC6B7D323E76F4E5BC /* icons.json */ = {isa = PBXBuildFile; fileRef = 67BCEE97F0B24AD4738EF13D /* icons.json */; };
+		C93FCFF4520AA953455D7463 /* ja.json */ = {isa = PBXBuildFile; fileRef = EB13DAC09043E3F7BA28D7AD /* ja.json */; };
+		92D4ED01A392999F7460EFFC /* Shortcuts.swift */ = {isa = PBXBuildFile; fileRef = DA98B8393330F228C15357F1 /* Shortcuts.swift */; };
+		1BB423A3BA58B8D0A352E5B1 /* Drive.swift */ = {isa = PBXBuildFile; fileRef = FD05C16DFE03A08FE09AB00A /* Drive.swift */; };
+		C8D15649DBCA36FFF856CC41 /* GoogleAuth.swift */ = {isa = PBXBuildFile; fileRef = 1756B30866BCEF19C05E3D97 /* GoogleAuth.swift */; };
+		42FEFAF3B7519AA6C07F564D /* Sync.swift */ = {isa = PBXBuildFile; fileRef = E9D491AA2D45A74DA94D34EE /* Sync.swift */; };
+		B30E02739C9F3C2A4A3BDA7A /* Lucide.swift */ = {isa = PBXBuildFile; fileRef = B48F0D6C78915721BE4EC175 /* Lucide.swift */; };
+		801E6E0DBB16F6C402F418B8 /* Theme.swift */ = {isa = PBXBuildFile; fileRef = 940F9D6A559742903A44564D /* Theme.swift */; };
+		1BA320642E3B71C6A6099895 /* CompatTests.swift */ = {isa = PBXBuildFile; fileRef = BCA6A78867168A860D7EF3F7 /* CompatTests.swift */; };
+		42991B97661F3C2D694D41E8 /* GoodnotesTests.swift */ = {isa = PBXBuildFile; fileRef = 544590DBD1CADFC16B0F3ABB /* GoodnotesTests.swift */; };
+		DA56900F30296E720943F4D9 /* ModelTests.swift */ = {isa = PBXBuildFile; fileRef = 70A55E80B478FDAD694F93A1 /* ModelTests.swift */; };
+		E6102A502BEB09AA1E07604E /* ScribbleSamples.swift */ = {isa = PBXBuildFile; fileRef = 94507EBFEA2FBB1BE43D29DB /* ScribbleSamples.swift */; };
+		59CD36E7B234E554B40D6819 /* SyncTests.swift */ = {isa = PBXBuildFile; fileRef = B6CCA108671D0D7A8EDB78C2 /* SyncTests.swift */; };
+		CD90F2E83FE2CB53EF87A860 /* EditorUITests.swift */ = {isa = PBXBuildFile; fileRef = F47C7761742EC86C31D1287E /* EditorUITests.swift */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		1A00000000000000000000C1 /* PBXContainerItemProxy */ = {
@@ -28,25 +68,45 @@
 		1A00000000000000000000F2 /* InkpadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InkpadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A00000000000000000000F3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A00000000000000000000F4 /* InkpadUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InkpadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDF4C5E38CD3D826D35317B3 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel.swift"; sourceTree = "<group>"; };
+		CD9A2E51D15422A50F7122BF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
+		58518371A516F97984B06B60 /* Demo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Demo.swift"; sourceTree = "<group>"; };
+		D0A7897E805180CD6B5F2BA0 /* CanvasExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CanvasExtras.swift"; sourceTree = "<group>"; };
+		AC12AEDFE9810BD9489335B7 /* CanvasTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CanvasTools.swift"; sourceTree = "<group>"; };
+		088AE7559B2009BCBF46F6D3 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CanvasView.swift"; sourceTree = "<group>"; };
+		06E7E9F7A2AEE3F8C090044D /* EditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorView.swift"; sourceTree = "<group>"; };
+		6E2E1CFDA272C7164F308434 /* PencilPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PencilPalette.swift"; sourceTree = "<group>"; };
+		590C86588FA8D8E267B3761D /* Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tools.swift"; sourceTree = "<group>"; };
+		4DFD382E64EB8065A02D76A7 /* InkpadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "InkpadApp.swift"; sourceTree = "<group>"; };
+		9496B812F36D264C3D51D747 /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "L10n.swift"; sourceTree = "<group>"; };
+		3C0B70E73150892EFCFC7DEB /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryView.swift"; sourceTree = "<group>"; };
+		ED23BD87D40C7A48040CECF2 /* Sheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sheets.swift"; sourceTree = "<group>"; };
+		86D6AEDCD568F6717AD040E8 /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Store.swift"; sourceTree = "<group>"; };
+		A0D76C5C312B1FEAC0EFE21A /* Cover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Cover.swift"; sourceTree = "<group>"; };
+		5133A0A5F3A3C054479EFC5D /* Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Document.swift"; sourceTree = "<group>"; };
+		776DAF877F3C4189D4F0DC16 /* Geom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Geom.swift"; sourceTree = "<group>"; };
+		FB853DD236810C9C7CF38321 /* Goodnotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Goodnotes.swift"; sourceTree = "<group>"; };
+		E1DF8AE27B240E5852E9B3A8 /* Items.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Items.swift"; sourceTree = "<group>"; };
+		0F0A976850934968C93D905A /* Page.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Page.swift"; sourceTree = "<group>"; };
+		B03CBE25EADD723461C8FD3D /* Zip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Zip.swift"; sourceTree = "<group>"; };
+		A2A2AC5E9EAAAA36ED5E66D2 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Platform.swift"; sourceTree = "<group>"; };
+		BF72E0606D709668EEEA5216 /* en.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "en.json"; sourceTree = "<group>"; };
+		67BCEE97F0B24AD4738EF13D /* icons.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "icons.json"; sourceTree = "<group>"; };
+		EB13DAC09043E3F7BA28D7AD /* ja.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "ja.json"; sourceTree = "<group>"; };
+		DA98B8393330F228C15357F1 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shortcuts.swift"; sourceTree = "<group>"; };
+		FD05C16DFE03A08FE09AB00A /* Drive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Drive.swift"; sourceTree = "<group>"; };
+		1756B30866BCEF19C05E3D97 /* GoogleAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GoogleAuth.swift"; sourceTree = "<group>"; };
+		E9D491AA2D45A74DA94D34EE /* Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sync.swift"; sourceTree = "<group>"; };
+		B48F0D6C78915721BE4EC175 /* Lucide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Lucide.swift"; sourceTree = "<group>"; };
+		940F9D6A559742903A44564D /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Theme.swift"; sourceTree = "<group>"; };
+		BCA6A78867168A860D7EF3F7 /* CompatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompatTests.swift"; sourceTree = "<group>"; };
+		544590DBD1CADFC16B0F3ABB /* GoodnotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GoodnotesTests.swift"; sourceTree = "<group>"; };
+		70A55E80B478FDAD694F93A1 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModelTests.swift"; sourceTree = "<group>"; };
+		94507EBFEA2FBB1BE43D29DB /* ScribbleSamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ScribbleSamples.swift"; sourceTree = "<group>"; };
+		B6CCA108671D0D7A8EDB78C2 /* SyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SyncTests.swift"; sourceTree = "<group>"; };
+		F47C7761742EC86C31D1287E /* EditorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorUITests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		1A00000000000000000000E1 /* Inkpad */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Inkpad;
-			sourceTree = "<group>";
-		};
-		1A00000000000000000000E2 /* InkpadTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = InkpadTests;
-			sourceTree = "<group>";
-		};
-		1A00000000000000000000E3 /* InkpadUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = InkpadUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		1A00000000000000000000D1 /* Frameworks */ = {
@@ -94,6 +154,112 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		DAE2FC21B82ABE3ED9BB34F6 /* Editor */ = {
+			isa = PBXGroup;
+			children = (
+				D0A7897E805180CD6B5F2BA0 /* CanvasExtras.swift */,
+				AC12AEDFE9810BD9489335B7 /* CanvasTools.swift */,
+				088AE7559B2009BCBF46F6D3 /* CanvasView.swift */,
+				06E7E9F7A2AEE3F8C090044D /* EditorView.swift */,
+				6E2E1CFDA272C7164F308434 /* PencilPalette.swift */,
+				590C86588FA8D8E267B3761D /* Tools.swift */,
+			);
+			path = "Editor";
+			sourceTree = "<group>";
+		};
+		1010AF22454FB85B3091169F /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				3C0B70E73150892EFCFC7DEB /* LibraryView.swift */,
+				ED23BD87D40C7A48040CECF2 /* Sheets.swift */,
+				86D6AEDCD568F6717AD040E8 /* Store.swift */,
+			);
+			path = "Library";
+			sourceTree = "<group>";
+		};
+		EF488445522403C2B5FB1E87 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				A0D76C5C312B1FEAC0EFE21A /* Cover.swift */,
+				5133A0A5F3A3C054479EFC5D /* Document.swift */,
+				776DAF877F3C4189D4F0DC16 /* Geom.swift */,
+				FB853DD236810C9C7CF38321 /* Goodnotes.swift */,
+				E1DF8AE27B240E5852E9B3A8 /* Items.swift */,
+				0F0A976850934968C93D905A /* Page.swift */,
+				B03CBE25EADD723461C8FD3D /* Zip.swift */,
+			);
+			path = "Model";
+			sourceTree = "<group>";
+		};
+		7FAB05DB53CC3E78E9C2704F /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				BF72E0606D709668EEEA5216 /* en.json */,
+				67BCEE97F0B24AD4738EF13D /* icons.json */,
+				EB13DAC09043E3F7BA28D7AD /* ja.json */,
+			);
+			path = "Resources";
+			sourceTree = "<group>";
+		};
+		847E5013BFD302A4A32FDD70 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				FD05C16DFE03A08FE09AB00A /* Drive.swift */,
+				1756B30866BCEF19C05E3D97 /* GoogleAuth.swift */,
+				E9D491AA2D45A74DA94D34EE /* Sync.swift */,
+			);
+			path = "Sync";
+			sourceTree = "<group>";
+		};
+		B773A09B3B65A08CDC250B72 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				B48F0D6C78915721BE4EC175 /* Lucide.swift */,
+				940F9D6A559742903A44564D /* Theme.swift */,
+			);
+			path = "UI";
+			sourceTree = "<group>";
+		};
+		1A00000000000000000000E1 /* Inkpad */ = {
+			isa = PBXGroup;
+			children = (
+				EDF4C5E38CD3D826D35317B3 /* AppModel.swift */,
+				CD9A2E51D15422A50F7122BF /* Assets.xcassets */,
+				58518371A516F97984B06B60 /* Demo.swift */,
+				DAE2FC21B82ABE3ED9BB34F6 /* Editor */,
+				4DFD382E64EB8065A02D76A7 /* InkpadApp.swift */,
+				9496B812F36D264C3D51D747 /* L10n.swift */,
+				1010AF22454FB85B3091169F /* Library */,
+				EF488445522403C2B5FB1E87 /* Model */,
+				A2A2AC5E9EAAAA36ED5E66D2 /* Platform.swift */,
+				7FAB05DB53CC3E78E9C2704F /* Resources */,
+				DA98B8393330F228C15357F1 /* Shortcuts.swift */,
+				847E5013BFD302A4A32FDD70 /* Sync */,
+				B773A09B3B65A08CDC250B72 /* UI */,
+			);
+			path = "Inkpad";
+			sourceTree = "<group>";
+		};
+		1A00000000000000000000E2 /* InkpadTests */ = {
+			isa = PBXGroup;
+			children = (
+				BCA6A78867168A860D7EF3F7 /* CompatTests.swift */,
+				544590DBD1CADFC16B0F3ABB /* GoodnotesTests.swift */,
+				70A55E80B478FDAD694F93A1 /* ModelTests.swift */,
+				94507EBFEA2FBB1BE43D29DB /* ScribbleSamples.swift */,
+				B6CCA108671D0D7A8EDB78C2 /* SyncTests.swift */,
+			);
+			path = "InkpadTests";
+			sourceTree = "<group>";
+		};
+		1A00000000000000000000E3 /* InkpadUITests */ = {
+			isa = PBXGroup;
+			children = (
+				F47C7761742EC86C31D1287E /* EditorUITests.swift */,
+			);
+			path = "InkpadUITests";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -108,9 +274,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				1A00000000000000000000E1 /* Inkpad */,
 			);
 			name = Inkpad;
 			productName = Inkpad;
@@ -130,9 +293,6 @@
 			dependencies = (
 				1A00000000000000000000C2 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				1A00000000000000000000E2 /* InkpadTests */,
-			);
 			name = InkpadTests;
 			productName = InkpadTests;
 			productReference = 1A00000000000000000000F2 /* InkpadTests.xctest */;
@@ -150,9 +310,6 @@
 			);
 			dependencies = (
 				1A00000000000000000000C4 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				1A00000000000000000000E3 /* InkpadUITests */,
 			);
 			name = InkpadUITests;
 			productName = InkpadUITests;
@@ -183,6 +340,7 @@
 				};
 			};
 			buildConfigurationList = 1A0000000000000000000070 /* Build configuration list for PBXProject "Inkpad" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -192,8 +350,6 @@
 				ja,
 			);
 			mainGroup = 1A0000000000000000000091;
-			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 1A0000000000000000000092 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -210,6 +366,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				456373B8D445BD1D3D43BFCF /* Assets.xcassets */,
+				B21BEB8F7A02B0D665754FC8 /* en.json */,
+				436F66CC6B7D323E76F4E5BC /* icons.json */,
+				C93FCFF4520AA953455D7463 /* ja.json */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,6 +394,33 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				55679106B4DCDC93F38CE1F0 /* AppModel.swift */,
+				CFB686AA3AE3645185C1CA79 /* Demo.swift */,
+				20D676159670BBFCF770787B /* CanvasExtras.swift */,
+				1A16B66FF784FC9A59D7D81B /* CanvasTools.swift */,
+				CF033C503F6B45E0FCC22C87 /* CanvasView.swift */,
+				2488747338224E7015EC9D87 /* EditorView.swift */,
+				2B6FB96F2E2B6F3EFE87C0B3 /* PencilPalette.swift */,
+				A24DFA3AFCEF5EEF654064B2 /* Tools.swift */,
+				D8AB2E18759CB6D40D4A8E3B /* InkpadApp.swift */,
+				4407CB270CD27C5300936CFB /* L10n.swift */,
+				CE9CEF7669C7B394702506D4 /* LibraryView.swift */,
+				47DF64DC87ED2C02A7122608 /* Sheets.swift */,
+				8F6ED24EA444C172D5395C0C /* Store.swift */,
+				E1EECD4DB6695852153FF7E1 /* Cover.swift */,
+				A0B988EBF07111452E6C16ED /* Document.swift */,
+				CF4F384837D56DBC43589EDA /* Geom.swift */,
+				FF1F0CE1C92E4D7015326C67 /* Goodnotes.swift */,
+				F4FC0BF15F919FBB38F819E2 /* Items.swift */,
+				28A60FCF39565D1643791C2C /* Page.swift */,
+				292B2CD85893D5C2F062A01D /* Zip.swift */,
+				3D5FC3218DD83CD3E0C1C885 /* Platform.swift */,
+				92D4ED01A392999F7460EFFC /* Shortcuts.swift */,
+				1BB423A3BA58B8D0A352E5B1 /* Drive.swift */,
+				C8D15649DBCA36FFF856CC41 /* GoogleAuth.swift */,
+				42FEFAF3B7519AA6C07F564D /* Sync.swift */,
+				B30E02739C9F3C2A4A3BDA7A /* Lucide.swift */,
+				801E6E0DBB16F6C402F418B8 /* Theme.swift */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,6 +428,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1BA320642E3B71C6A6099895 /* CompatTests.swift */,
+				42991B97661F3C2D694D41E8 /* GoodnotesTests.swift */,
+				DA56900F30296E720943F4D9 /* ModelTests.swift */,
+				E6102A502BEB09AA1E07604E /* ScribbleSamples.swift */,
+				59CD36E7B234E554B40D6819 /* SyncTests.swift */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -248,6 +440,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD90F2E83FE2CB53EF87A860 /* EditorUITests.swift */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,6 +506,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -347,6 +543,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -381,6 +580,9 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -401,6 +603,9 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -420,6 +625,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -439,6 +647,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+                "CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+                "CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
+                "DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = XZTD9D44Y9;
 				GENERATE_INFOPLIST_FILE = YES;

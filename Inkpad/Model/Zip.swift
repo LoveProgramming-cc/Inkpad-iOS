@@ -123,8 +123,13 @@ final class ZipWriter {
         FileManager.default.createFile(atPath: tmp.path, contents: nil)
         handle = try FileHandle(forWritingTo: tmp)
         let c = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
-        stamp = (UInt16((c.hour ?? 0) << 11 | (c.minute ?? 0) << 5 | (c.second ?? 0) / 2),
-                 UInt16((max(1980, c.year ?? 1980) - 1980) << 9 | (c.month ?? 1) << 5 | (c.day ?? 1)))
+        let hour = (c.hour ?? 0) << 11
+        let minute = (c.minute ?? 0) << 5
+        let second = (c.second ?? 0) / 2
+        let year = (max(1980, c.year ?? 1980) - 1980) << 9
+        let month = (c.month ?? 1) << 5
+        let day = c.day ?? 1
+        stamp = (UInt16(hour | minute | second), UInt16(year | month | day))
     }
 
     static func crc(_ data: Data) -> UInt32 {

@@ -476,162 +476,172 @@ struct LibraryView: View {
     // MARK: main column
 
     private var main: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                if sizeClass == .compact {
-                    Dropdown(options: sections.map { tr($0.2) }, index: Binding(get: { sections.firstIndex { $0.0 == mode } ?? 0 }, set: { mode = sections[$0].0 }))
-                }
-                Spacer(minLength: 0)
+        libraryContent
+            // The bar at the top (search, title, buttons) is frosted glass over the notebooks,
+            // which scroll on under it, as the system's own bars are.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
-                    Icon("search", 16).foregroundStyle(.secondary)
-                    TextField(tr("搜索"), text: $query).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Icon("close", 14).foregroundStyle(.secondary) }.buttonStyle(.plain)
+                    if sizeClass == .compact {
+                        Dropdown(options: sections.map { tr($0.2) }, index: Binding(get: { sections.firstIndex { $0.0 == mode } ?? 0 }, set: { mode = sections[$0].0 }))
                     }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        Icon("search", 16).foregroundStyle(.secondary)
+                        TextField(tr("搜索"), text: $query).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if !query.isEmpty {
+                            Button { query = "" } label: { Icon("close", 14).foregroundStyle(.secondary) }.buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: sizeClass == .compact ? .infinity : 220)
+                    .frame(height: 34)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+                    PopButton(tag: "cloud") { close in CloudPanel(close: close) } label: {
+                        Icon(app.syncing ? "syncing" : "cloud")
+                            .foregroundStyle(app.syncing ? Theme.accentText : app.syncError != nil ? Theme.danger : Color.primary)
+                            .frame(width: 38, height: 34)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tr("Google Drive 同步"))
+                    Button { app.showSettings = true } label: { Icon("settings").frame(width: 38, height: 34).contentShape(Rectangle()) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tr("设置"))
                 }
                 .padding(.horizontal, 12)
-                .frame(maxWidth: sizeClass == .compact ? .infinity : 220)
-                .frame(height: 34)
-                .background(Color.primary.opacity(0.08), in: Capsule())
-                PopButton(tag: "cloud") { close in CloudPanel(close: close) } label: {
-                    Icon(app.syncing ? "syncing" : "cloud")
-                        .foregroundStyle(app.syncing ? Theme.accentText : app.syncError != nil ? Theme.danger : Color.primary)
-                        .frame(width: 38, height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("Google Drive 同步"))
-                Button { app.showSettings = true } label: { Icon("settings").frame(width: 38, height: 34).contentShape(Rectangle()) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tr("设置"))
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 52)
-            .modifier(ClearsWindowControls())
+                .frame(height: 52)
+                .modifier(ClearsWindowControls())
 
-            if inside { crumbs }
-            if selecting { selectionBar } else {
-            HStack(spacing: 10) {
-                if inside {
-                    DropSpot(drop: { dropped(on: parent(of: current) ?? store.root) }) {
-                        Button { folder = parent(of: current) } label: {
-                            Icon("back").frame(width: 34, height: 34).background(Color.primary.opacity(0.1), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(tr("返回上一级"))
-                    }
-                }
-                Text(title).font(.system(size: sizeClass == .compact ? 26 : 36, weight: .heavy)).tracking(-0.8).lineLimit(1).minimumScaleFactor(0.6)
-                Spacer(minLength: 8)
-                if mode == .docs {
-                    PopButton { close in
-                        MenuList(items: [
-                            MenuItem(tr("笔记本"), "cover") { newNotebook() },
-                            MenuItem(tr("白板"), "board") { newBoard() },
-                            MenuItem(tr("导入 PDF 或 Goodnotes…"), "share") { pick(.files) },
-                            MenuItem(tr("导入整个文件夹…"), "documents") { pick(.folder) },
-                            MenuItem(tr("导入存档（.zip）…"), "restore") { pick(.archive) },
-                            .line,
-                            MenuItem(tr("文件夹"), "documents") {
-                                promptText = tr("新文件夹")
-                                prompt = .folder
-                            },
-                        ], close: close)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Icon("plus", 16)
-                            Text(tr("新建")).fixedSize()
-                            Icon("chevron", 14)
+                if inside { crumbs }
+                if selecting { selectionBar } else {
+                HStack(spacing: 10) {
+                    if inside {
+                        DropSpot(drop: { dropped(on: parent(of: current) ?? store.root) }) {
+                            Button { folder = parent(of: current) } label: {
+                                Icon("back").frame(width: 34, height: 34).background(Color.primary.opacity(0.1), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(tr("返回上一级"))
                         }
                     }
-                    .buttonStyle(CapsuleButtonStyle(kind: .suggested))
-                    .accessibilityLabel(tr("新建"))
-                }
-                if mode == .trash && !store.trashed().isEmpty {
-                    Button(tr("清空废纸篓")) { emptying = true }.buttonStyle(CapsuleButtonStyle(kind: .destructive))
-                }
-                PopButton { close in
-                    MenuList(items: [
-                        MenuItem(tr("日期"), tools.p.sort == "date" ? "check_circle" : "none") { tools.p.sort = "date" },
-                        MenuItem(tr("名称"), tools.p.sort == "name" ? "check_circle" : "none") { tools.p.sort = "name" },
-                    ], close: close)
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(tr(tools.p.sort == "name" ? "名称" : "日期")).font(.system(size: 15)).fixedSize()
-                        Icon("chevron", 14)
-                    }
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 35)
-                    .background(Color.primary.opacity(0.1), in: Capsule())
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                Button { selecting = true } label: {
-                    Icon("check_circle").frame(width: 35, height: 35).background(Color.primary.opacity(0.1), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("选择项目"))
-            }
-            .padding(.leading, sizeClass == .compact ? 16 : 34)
-            .padding(.trailing, sizeClass == .compact ? 12 : 30)
-            .padding(.top, 2)
-            .padding(.bottom, 14)
-            }
-
-            let list = entries
-            if list.isEmpty {
-                VStack(spacing: 10) {
-                    Text(searching ? tr("没有匹配的项目") : mode == .docs ? tr("还没有笔记") : mode == .favs ? tr("还没有收藏") : tr("废纸篓是空的"))
-                        .font(.system(size: 26, weight: .heavy))
-                    if mode == .docs && !searching {
-                        Text(tr("点击“新建”创建笔记本，或导入一份 PDF。")).foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 166, maximum: 210), spacing: 14)], alignment: .leading, spacing: 22) {
-                        ForEach(list) { entry in
-                            EntryCell(entry: entry, picked: selecting ? selected.contains(entry.id) : cursor == entry.id,
-                                      drag: mode == .docs ? { pickUp(entry) } : nil,
-                                      drop: mode == .docs && entry.isDir ? { dropped(on: entry.url) } : nil,
-                                      favorite: mode == .trash ? nil : store.isFavorite(entry.url), style: store.folderStyle(entry.url),
-                                      menu: menu(entry), open: { activate(entry) },
-                                      openTwice: entry.isDir && !selecting && mode != .trash ? { enter(entry) } : nil, star: {
-                                store.toggleFavorite(entry.url)
-                                app.refreshLibrary()
-                            })
-                        }
-                    }
-                    .padding(.horizontal, sizeClass == .compact ? 10 : 26)
-                    .padding(.top, 10)
-                    .padding(.bottom, 30)
-                    .frame(maxWidth: .infinity, minHeight: max(300, gridHeight), alignment: .topLeading)
-                    .coordinateSpace(name: "grid")
-                    .background(MouseBand(onItem: { p in frames.values.contains { $0.contains(p) } }) { rect, keep in banded(rect, keep) }.allowsHitTesting(false))
-                    .background {
-                        // A long press beside the items: undoing and redoing moves.
-                        if mode == .docs, !app.moveUndo.isEmpty || !app.moveRedo.isEmpty {
-                            Color.clear.contentShape(Rectangle()).contextMenu {
-                                if !app.moveUndo.isEmpty { Button { undoMove() } label: { Label(tr("撤销移动"), systemImage: "arrow.uturn.backward") } }
-                                if !app.moveRedo.isEmpty { Button { redoMove() } label: { Label(tr("重做移动"), systemImage: "arrow.uturn.forward") } }
+                    Text(title).font(.system(size: sizeClass == .compact ? 26 : 36, weight: .heavy)).tracking(-0.8).lineLimit(1).minimumScaleFactor(0.6)
+                    Spacer(minLength: 8)
+                    if mode == .docs {
+                        PopButton { close in
+                            MenuList(items: [
+                                MenuItem(tr("笔记本"), "cover") { newNotebook() },
+                                MenuItem(tr("白板"), "board") { newBoard() },
+                                MenuItem(tr("导入 PDF 或 Goodnotes…"), "share") { pick(.files) },
+                                MenuItem(tr("导入整个文件夹…"), "documents") { pick(.folder) },
+                                MenuItem(tr("导入存档（.zip）…"), "restore") { pick(.archive) },
+                                .line,
+                                MenuItem(tr("文件夹"), "documents") {
+                                    promptText = tr("新文件夹")
+                                    prompt = .folder
+                                },
+                            ], close: close)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Icon("plus", 16)
+                                Text(tr("新建")).fixedSize()
+                                Icon("chevron", 14)
                             }
                         }
+                        .buttonStyle(CapsuleButtonStyle(kind: .suggested))
+                        .accessibilityLabel(tr("新建"))
                     }
-                    .overlay(alignment: .topLeading) {
-                        if let band {
-                            Rectangle().fill(Theme.accent.opacity(0.15)).overlay(Rectangle().strokeBorder(Theme.accent.opacity(0.8), lineWidth: 1))
-                                .frame(width: band.width, height: band.height).offset(x: band.minX, y: band.minY).allowsHitTesting(false)
+                    if mode == .trash && !store.trashed().isEmpty {
+                        Button(tr("清空废纸篓")) { emptying = true }.buttonStyle(CapsuleButtonStyle(kind: .destructive))
+                    }
+                    PopButton { close in
+                        MenuList(items: [
+                            MenuItem(tr("日期"), tools.p.sort == "date" ? "check_circle" : "none") { tools.p.sort = "date" },
+                            MenuItem(tr("名称"), tools.p.sort == "name" ? "check_circle" : "none") { tools.p.sort = "name" },
+                        ], close: close)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(tr(tools.p.sort == "name" ? "名称" : "日期")).font(.system(size: 15)).fixedSize()
+                            Icon("chevron", 14)
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 35)
+                        .background(Color.primary.opacity(0.1), in: Capsule())
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Button { selecting = true } label: {
+                        Icon("check_circle").frame(width: 35, height: 35).background(Color.primary.opacity(0.1), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tr("选择项目"))
+                }
+                .padding(.leading, sizeClass == .compact ? 16 : 34)
+                .padding(.trailing, sizeClass == .compact ? 12 : 30)
+                .padding(.top, 2)
+                .padding(.bottom, 14)
+                }
+
+                }
+                .background(.bar)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var libraryContent: some View {
+        let list = entries
+        if list.isEmpty {
+            VStack(spacing: 10) {
+                Text(searching ? tr("没有匹配的项目") : mode == .docs ? tr("还没有笔记") : mode == .favs ? tr("还没有收藏") : tr("废纸篓是空的"))
+                    .font(.system(size: 26, weight: .heavy))
+                if mode == .docs && !searching {
+                    Text(tr("点击“新建”创建笔记本，或导入一份 PDF。")).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 166, maximum: 210), spacing: 14)], alignment: .leading, spacing: 22) {
+                    ForEach(list) { entry in
+                        EntryCell(entry: entry, picked: selecting ? selected.contains(entry.id) : cursor == entry.id,
+                                  drag: mode == .docs ? { pickUp(entry) } : nil,
+                                  drop: mode == .docs && entry.isDir ? { dropped(on: entry.url) } : nil,
+                                  favorite: mode == .trash ? nil : store.isFavorite(entry.url), style: store.folderStyle(entry.url),
+                                  menu: menu(entry), open: { activate(entry) },
+                                  openTwice: entry.isDir && !selecting && mode != .trash ? { enter(entry) } : nil, star: {
+                            store.toggleFavorite(entry.url)
+                            app.refreshLibrary()
+                        })
+                    }
+                }
+                .padding(.horizontal, sizeClass == .compact ? 10 : 26)
+                .padding(.top, 10)
+                .padding(.bottom, 30)
+                .frame(maxWidth: .infinity, minHeight: max(300, gridHeight), alignment: .topLeading)
+                .coordinateSpace(name: "grid")
+                .background(MouseBand(onItem: { p in frames.values.contains { $0.contains(p) } }) { rect, keep in banded(rect, keep) }.allowsHitTesting(false))
+                .background {
+                    // A long press beside the items: undoing and redoing moves.
+                    if mode == .docs, !app.moveUndo.isEmpty || !app.moveRedo.isEmpty {
+                        Color.clear.contentShape(Rectangle()).contextMenu {
+                            if !app.moveUndo.isEmpty { Button { undoMove() } label: { Label(tr("撤销移动"), systemImage: "arrow.uturn.backward") } }
+                            if !app.moveRedo.isEmpty { Button { redoMove() } label: { Label(tr("重做移动"), systemImage: "arrow.uturn.forward") } }
                         }
                     }
-                    .onPreferenceChange(CellFrames.self) { frames = $0 }
                 }
-                // The space beside the items reaches to the bottom of the window: it is where a
-                // mouse starts a rubber band, and where a long press undoes a move.
-                .background(GeometryReader { geo in Color.clear.onAppear { gridHeight = geo.size.height }.onChange(of: geo.size.height) { _, h in gridHeight = h } })
+                .overlay(alignment: .topLeading) {
+                    if let band {
+                        Rectangle().fill(Theme.accent.opacity(0.15)).overlay(Rectangle().strokeBorder(Theme.accent.opacity(0.8), lineWidth: 1))
+                            .frame(width: band.width, height: band.height).offset(x: band.minX, y: band.minY).allowsHitTesting(false)
+                    }
+                }
+                .onPreferenceChange(CellFrames.self) { frames = $0 }
             }
+            // The space beside the items reaches to the bottom of the window: it is where a
+            // mouse starts a rubber band, and where a long press undoes a move.
+            .background(GeometryReader { geo in Color.clear.onAppear { gridHeight = geo.size.height }.onChange(of: geo.size.height) { _, h in gridHeight = h } })
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: selecting several items

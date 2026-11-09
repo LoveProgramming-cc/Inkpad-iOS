@@ -66,7 +66,7 @@ final class EditorSession: ObservableObject, Identifiable {
     private func scheduleSave() {
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.save() }
+            Task { @MainActor [weak self] in self?.save() }
         }
     }
 
@@ -209,6 +209,9 @@ final class AppModel: ObservableObject {
 
     private var toastTimer: Timer?
     private var syncTask: Task<Void, Never>?
+    #if DEBUG
+    private var snapshotCount = 0
+    #endif
     private var syncChecked = false                    // whether a thorough sync has run since the app started
     private var syncNext: (quiet: Bool, only: Bool)?   // a sync asked for while one was running
     private var editTimer: Timer?                      // runs out a moment after the last stroke
@@ -220,7 +223,7 @@ final class AppModel: ObservableObject {
         lastSync = LibrarySync.lastSync(store.root)
         // Every ten minutes while the library is showing, as the desktop does.
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.session == nil, UIApplication.shared.applicationState == .active else { return }
                 self.sync(quiet: true)
             }
@@ -230,11 +233,11 @@ final class AppModel: ObservableObject {
         if let shots = ProcessInfo.processInfo.environment["INKPAD_SNAPSHOT"] {
             // The window's own picture of itself, every few seconds: for looking at the Mac
             // version where the screen cannot be captured. INKPAD_OPEN opens a notebook first.
-            var n = 0
             Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self, let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
-                    n += 1
+                    self.snapshotCount += 1
+                    let n = self.snapshotCount
                     if n == 2, let name = ProcessInfo.processInfo.environment["INKPAD_OPEN"] {
                         if name.hasPrefix("action:") { self.perform(shortcut: String(name.dropFirst(7))) } else if name == "settings" { self.showSettings = true } else { self.open(self.store.root.appendingPathComponent(name)) }
                     }
@@ -259,7 +262,7 @@ final class AppModel: ObservableObject {
         toastAction = action
         toastTimer?.invalidate()
         toastTimer = Timer.scheduledTimer(withTimeInterval: button == nil ? 2.5 : 5, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.toast = nil }
+            Task { @MainActor [weak self] in self?.toast = nil }
         }
     }
 
@@ -454,7 +457,7 @@ final class AppModel: ObservableObject {
         editTimer?.invalidate()
         let wait = max(5, openSynced.addingTimeInterval(4 * openTook).timeIntervalSinceNow)
         editTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, let session = self.session else { return }
                 self.editTimer = nil
                 if session.canvas.op != nil || self.syncing { self.syncAfterEdit() } else { self.syncOpen() }
@@ -470,7 +473,7 @@ final class AppModel: ObservableObject {
         guard session != nil else { return }
         let every = min(300, max(5, tools.p.syncEvery))
         watchTimer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { [weak self] timer in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.session != nil else {
                     timer.invalidate()
                     return

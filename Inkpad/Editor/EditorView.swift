@@ -100,7 +100,7 @@ struct EditorView: View {
     private var page: Page { doc.pages[min(max(session.page, 0), doc.pages.count - 1)] }
     private var isBoard: Bool { doc.pages.first?.board ?? false }
 
-    var body: some View {
+    private var editorLayout: some View {
         VStack(spacing: 0) {
             header
             HStack(spacing: 0) {
@@ -120,6 +120,10 @@ struct EditorView: View {
         }
         .background(Color(Theme.canvasUI))
         .statusBarHidden()
+    }
+
+    private var editorInput: some View {
+        editorLayout
         .onChange(of: tools.p.fingerDraw) { _, _ in canvas.applyInputSettings() }
         .onChange(of: tools.p.scrollbars) { _, _ in canvas.applyInputSettings() }
         .onChange(of: tools.p.maxZoom) { _, _ in canvas.applyInputSettings() }
@@ -140,6 +144,10 @@ struct EditorView: View {
         .onChange(of: session.tick) { _, _ in
             if finding { refind() }
         }
+    }
+
+    private var editorLifecycle: some View {
+        editorInput
         .onAppear {
             canvas.onPullAdd = { side in
                 // Pulled past an end: add a page like its neighbour there.
@@ -158,6 +166,10 @@ struct EditorView: View {
             canvas.applyInputSettings()
             if tools.p.hiddenTools.contains(tools.tool) { tools.tool = "pen" }
         }
+    }
+
+    var body: some View {
+        editorLifecycle
         .photosPicker(isPresented: $pickPhoto, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in
             guard let item else { return }

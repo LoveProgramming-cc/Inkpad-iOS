@@ -42,7 +42,9 @@ struct Pill<Content: View>: View {
         HStack(spacing: 2) { content }
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .background(Theme.popoverBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // Frosted glass: the page shows through blurred, washed with the bar's colour.
+            .background(Theme.popoverBg.opacity(0.62), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.black.opacity(0.05), lineWidth: 1))
             .shadow(color: .black.opacity(0.10), radius: 10, y: 6)
             .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
@@ -109,7 +111,13 @@ struct PopButton<Label: View, Content: View>: View {
 
     var body: some View {
         Button { open = true } label: { label() }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).midY } action: { middle = $0 }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { middle = geometry.frame(in: .global).midY }
+                        .onChange(of: geometry.frame(in: .global).midY) { _, value in middle = value }
+                }
+            }
             #if DEBUG
             .task {
                 guard !tag.isEmpty, ProcessInfo.processInfo.environment["INKPAD_POP"] == tag else { return }
@@ -351,17 +359,87 @@ struct ClearsWindowControls: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.leading, lead)
-            .background {
-                GeometryReader { g in
-                    Color.clear
-                        .onAppear { lead = Self.corner(g) }
-                        .onChange(of: Self.corner(g)) { _, value in lead = value }
-                }
-            }
+            .background { clearanceReader }
     }
 
-    private static func corner(_ g: GeometryProxy) -> CGFloat {
-        if #available(iOS 26.0, *) { return g.containerCornerInsets.topLeading.width }
-        return 0
+    @ViewBuilder
+    private var clearanceReader: some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            GeometryReader { geometry in
+                let inset = geometry.containerCornerInsets.topLeading.width
+                Color.clear
+                    .onAppear { lead = inset }
+                    .onChange(of: inset) { _, value in lead = value }
+            }
+        }
+        #else
+        // The old SDK cannot name the system corner-inset API, even on a new runtime.
+        WindowControlsClearance { lead = $0 }
+        #endif
+    }
+}
+
+/// A conservative fallback for SDKs predating iPadOS 26. New SDKs use exact system insets.
+private struct WindowControlsClearance: UIViewRepresentable {
+    var changed: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        view.isUserInteractionEnabled = false
+        view.changed = changed
+        return view
+    }
+
+    func updateUIView(_ view: Probe, context: Context) {
+        view.changed = changed
+        view.setNeedsLayout()
+    }
+
+    final class Probe: UIView {
+        var changed: ((CGFloat) -> Void)?
+        private var reported: CGFloat?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            setNeedsLayout()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // Update SwiftUI state after UIKit's layout pass.
+            DispatchQueue.main.async { [weak self] in self?.reportClearance() }
+        }
+
+        private func reportClearance() {
+            var inset: CGFloat = 0
+            #if !targetEnvironment(macCatalyst)
+            if #available(iOS 26.0, *), traitCollection.userInterfaceIdiom == .pad,
+               let window, let scene = window.windowScene {
+                let screen = scene.screen.bounds.size
+                let size = window.bounds.size
+                let windowed = size.width < screen.width - 1 || size.height < screen.height - 1
+                let bar = convert(bounds, to: window)
+                // Reserve only for a bar intersecting the leading corner of this window. The
+                // controls end about 61pt from the window's edge. The bar's content begins after
+                // the leading safe area (which this probe, behind it, does not have), and the
+                // bar adds its own padding and its buttons theirs (about 20pt to the first icon):
+                // from 54pt the first icon sits some 10pt clear of the controls. (Reserving 64pt
+                // from the window's edge, safe area and all, left a gap of 44pt.)
+                let start = bar.minX + safeAreaInsets.left
+                if windowed, bar.minY < 60, bar.maxY > 0, start < 54 {
+                    inset = max(0, 54 - start)
+                }
+            }
+            #endif
+            guard reported != inset else { return }
+            reported = inset
+            changed?(inset)
+        }
     }
 }
