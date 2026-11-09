@@ -438,15 +438,16 @@ final class Document {
         doc.orderMT = num(meta["order_mt"])
         doc.orderSeen = doc.pages.map(\.id)
         doc.url = url
-        if let cover = meta["cover"] as? [Any], !cover.isEmpty {
-            // Older files stored a bare colour.
-            if let style = cover[0] as? String, cover.count > 1 {
-                doc.coverSpec = (style, RGB(json: cover[1]))
-            } else {
-                doc.coverSpec = ("simple", RGB(json: cover))
-            }
-        }
+        doc.coverSpec = coverSpec(meta)
         return doc
+    }
+
+    /// The designed cover in a document.json's meta, or nil for the first page.
+    static func coverSpec(_ meta: [String: Any]) -> (String, RGB)? {
+        guard let cover = meta["cover"] as? [Any], !cover.isEmpty else { return nil }
+        // Older files stored a bare colour.
+        if let style = cover[0] as? String, cover.count > 1 { return (style, RGB(json: cover[1])) }
+        return ("simple", RGB(json: cover))
     }
 
     var displayName: String {
@@ -561,8 +562,16 @@ enum Notebook {
         }
     }
 
+    /// The cover a library shows. A designed cover carries the notebook's name, which is the
+    /// file's name now: the picture stored in the file was drawn with the name it had then, and a
+    /// rename (in the library, or from another device) does not redraw it.
     static func cover(of url: URL) -> UIImage? {
-        guard let z = try? ZipReader(url: url), let data = try? z.read("cover.png") else { return nil }
+        guard let z = try? ZipReader(url: url) else { return nil }
+        if let json = try? z.read("document.json"), let meta = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+           let spec = Document.coverSpec(meta) {
+            return renderCover(spec, title: url.deletingPathExtension().lastPathComponent)
+        }
+        guard let data = try? z.read("cover.png") else { return nil }
         return UIImage(data: data)
     }
 }
