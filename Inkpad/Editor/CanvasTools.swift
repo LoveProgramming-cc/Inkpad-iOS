@@ -354,6 +354,7 @@ extension CanvasView {
         pressGesture.delegate = self
         addGestureRecognizer(pressGesture)
         addInteraction(editMenu)
+        addInteraction(UIDropInteraction(delegate: self))   // pictures dragged in from other apps
         let pencil = UIPencilInteraction()
         pencil.delegate = self
         addInteraction(pencil)
@@ -899,6 +900,7 @@ extension CanvasView {
                     // (in case it was not meant as one), a second undo removes the scribble too.
                     doc.addItems(page, [item])
                     doc.removeItems(page, targets + [item])
+                    if tools.p.scribbleToast { onScribbled?(targets.count) }
                     return
                 }
             }
@@ -1437,5 +1439,43 @@ extension CanvasView {
         nav.popoverPresentationController?.sourceView = self
         nav.popoverPresentationController?.sourceRect = CGRect(x: v.x - 1, y: v.y - 1, width: 2, height: 2)
         host?.present(nav, animated: true)
+    }
+}
+
+
+// MARK: pictures dropped in
+
+/// Pictures dragged in from another app (Split View, Slide Over, a window beside this one) are put
+/// on the page where they are let go, selected, as an inserted picture is.
+extension CanvasView: UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        session.canLoadObjects(ofClass: UIImage.self)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: .copy)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        let at = session.location(in: self)
+        session.loadObjects(ofClass: UIImage.self) { [weak self] objects in
+            for case let image as UIImage in objects {
+                guard let (png, size) = Self.pagePicture(image) else { continue }
+                self?.insertImage(png, width: size.width * 0.5, height: size.height * 0.5, at: at)
+            }
+        }
+    }
+
+    /// A picture as PNG, no larger than a page needs (as photos are inserted).
+    static func pagePicture(_ image: UIImage) -> (Data, CGSize)? {
+        let longest = max(image.size.width, image.size.height) * image.scale
+        guard longest > 0 else { return nil }
+        let k = min(1, 1600 / longest)
+        let size = CGSize(width: (image.size.width * image.scale * k).rounded(), height: (image.size.height * image.scale * k).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        guard let png = small.pngData() else { return nil }
+        return (png, size)
     }
 }

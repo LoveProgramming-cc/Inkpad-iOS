@@ -20,6 +20,7 @@ final class EditorSession: ObservableObject, Identifiable {
     let canvas: CanvasView
     var onError: ((String) -> Void)?
     var onToast: ((String) -> Void)?
+    var onScribbled: ((Int) -> Void)?
     var onEdit: (() -> Void)?    // something was written, drawn, erased or otherwise changed
 
     private var listener: UUID?
@@ -41,6 +42,9 @@ final class EditorSession: ObservableObject, Identifiable {
         canvas.onPage = { [weak self] in self?.page = $0 }
         canvas.onZoom = { [weak self] in self?.zoom = $0 }
         canvas.onToast = { [weak self] in self?.onToast?($0) }
+        canvas.onScribbled = { [weak self] n in
+            self?.onScribbled?(n)
+        }
         canvas.onSelection = { [weak self] in self?.hasSelection = self?.canvas.sel != nil }
         attach()
     }
@@ -275,6 +279,10 @@ final class AppModel: ObservableObject {
             let s = try EditorSession(url: url)
             s.onError = { [weak self] in self?.show($0) }
             s.onToast = { [weak self] in self?.show($0) }
+            s.onScribbled = { [weak self, weak s] n in
+                // How much was scribbled out, with Undo (Settings: "Show Undo after scribbling out").
+                self?.show(trf("已擦除 %d 项", n), button: tr("撤销")) { s?.canvas.undo() }
+            }
             s.onEdit = { [weak self] in self?.syncAfterEdit() }
             session = s
             syncOpen()   // so that it shows what other devices wrote in it

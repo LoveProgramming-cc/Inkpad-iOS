@@ -139,6 +139,7 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
     var onPage: ((Int) -> Void)?
     var onZoom: ((Int) -> Void)?
     var onToast: ((String) -> Void)?
+    var onScribbled: ((Int) -> Void)?   // so many items were scribbled out
     var onSelection: (() -> Void)?
     var onSaveImage: ((UIImage) -> Void)?
 

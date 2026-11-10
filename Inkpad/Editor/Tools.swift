@@ -73,6 +73,7 @@ struct Prefs: Codable, Equatable {
     var holdShape = true
     var scribbleErase = true
     var scribbleLoose = false   // the earlier, readier rule for what a scribble is
+    var scribbleToast = true    // after scribbling something out, say how much, with Undo
     var fingerDraw = false
     var pencilDoubleTap = true
     var pencilSqueeze = true   // squeezing an Apple Pencil Pro brings the tools up around its tip

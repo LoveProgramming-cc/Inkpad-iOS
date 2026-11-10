@@ -212,7 +212,10 @@ private struct EntryCell: View {
                         .accessibilityLabel(tr(favorite ? "取消收藏" : "收藏"))
                     }
                 }
-                .frame(height: 200, alignment: .bottom)
+                // A notebook's cover may be any shape up to 150 x 200; a folder is only as tall as
+                // its art, so a row of folders does not stand in empty space. (The grid puts the
+                // cells of a row in the middle of its height.)
+                .frame(height: entry.isDir ? nil : 200, alignment: .bottom)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -220,7 +223,8 @@ private struct EntryCell: View {
             .accessibilityIdentifier("open-" + entry.name)
             PopButton { close in MenuList(items: menu, close: close) } label: {
                 HStack(spacing: 2) {
-                    Text(entry.name).font(.system(size: 16)).lineLimit(1)
+                    // The name on up to three lines, in the middle: read, not cut at one line.
+                    Text(entry.name).font(.system(size: 16)).lineLimit(3).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     Icon("chevron", 14)
                 }
                 .padding(.horizontal, 8)
