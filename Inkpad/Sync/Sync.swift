@@ -582,8 +582,9 @@ enum LibrarySync {
         var local: [String: Local] = [:]
         let (files, _) = scan(root)
         var found = files.sorted { $0.key < $1.key }.map { Local(url: $0.value, rel: $0.key, inTrash: false) }
-        let trashNames = ((try? fm.contentsOfDirectory(atPath: trashDir.path)) ?? []).filter { $0.hasSuffix(notebookExt) }.sorted()
-        found += trashNames.map { Local(url: trashDir.appendingPathComponent($0), rel: $0, inTrash: true) }
+        // The trash, folders put there included: what is in a trashed folder is in the trash too,
+        // not gone. (Taken for gone, it would be passed on to other devices as deleted.)
+        found += scan(trashDir).0.sorted { $0.key < $1.key }.map { Local(url: $0.value, rel: $0.key, inTrash: true) }
         let onlyPaths = only.map { Set($0.map { $0.standardizedFileURL.path }) }
         // A notebook that has not been written since the last sync is known by its place: it is
         // not opened to be asked who it is. This device's record of the last sync is the list of
@@ -626,13 +627,23 @@ enum LibrarySync {
         /// Move a local notebook to where the index says it belongs.
         func place(_ nid: String, _ rel: String, _ inTrash: Bool) throws {
             let path = local[nid]!.url
-            var target = inTrash ? trashDir.appendingPathComponent((rel as NSString).lastPathComponent) : abspath(rel)
+            // In the trash a notebook keeps the folder it was trashed with, as on the device that
+            // trashed the folder, so that putting the folder back brings it along everywhere.
+            var target = inTrash ? trashDir.appendingPathComponent(rel) : abspath(rel)
             if target.standardizedFileURL.path != path.standardizedFileURL.path {
                 try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 target = unique(target)
                 try fm.moveItem(at: path, to: target)
+                // A folder in the trash that this leaves empty goes with it.
+                var dir = path.deletingLastPathComponent().standardizedFileURL
+                let trashPath = trashDir.standardizedFileURL.path
+                while dir.path.hasPrefix(trashPath + "/"),
+                      ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? ["?"]).isEmpty {
+                    try? fm.removeItem(at: dir)
+                    dir = dir.deletingLastPathComponent()
+                }
             }
-            local[nid] = Local(url: target, rel: inTrash ? target.lastPathComponent : relPath(target, root), inTrash: inTrash)
+            local[nid] = Local(url: target, rel: relPath(target, inTrash ? trashDir : root), inTrash: inTrash)
         }
 
         /// (what stands for the content, fileSign()) of a notebook here. No notebook is read
@@ -832,7 +843,7 @@ enum LibrarySync {
                 }
                 if entry.trashed && before == nil { continue }   // sitting in another device's trash; no need to fetch it
                 guard let path = entry.path, let file = entry.file else { continue }
-                var target = entry.trashed ? trashDir.appendingPathComponent((path as NSString).lastPathComponent) : abspath(path)
+                var target = entry.trashed ? trashDir.appendingPathComponent(path) : abspath(path)
                 try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 target = unique(target)
                 // Put together aside, and moved into the library only when it is whole: a download
@@ -843,22 +854,28 @@ enum LibrarySync {
                 try fm.moveItem(at: coming, to: target)
                 let stat = fileSign(target) ?? ""
                 agreed[nid] = ("written " + stat, stat)
-                local[nid] = Local(url: target, rel: entry.trashed ? target.lastPathComponent : relPath(target, root), inTrash: entry.trashed)
+                local[nid] = Local(url: target, rel: relPath(target, entry.trashed ? trashDir : root), inTrash: entry.trashed)
                 summary.down += 1
             } else if let here, let entry {
                 let mine = try localMD5(nid, here.url).0
                 let wasLocal = (before?["local"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? beforeMD5
                 let unchanged = before != nil && mine == wasLocal
                 var content = true
+                // Put back from the trash here since this device last followed a deletion into it.
+                let restored = (before?["trashed"] as? Bool ?? false) && !here.inTrash
                 if entry.deleted {
-                    if here.inTrash || unchanged {
-                        // Deleted elsewhere and not edited here since: follow, into the trash.
+                    if here.inTrash || (unchanged && !restored) {
+                        // Deleted elsewhere and not edited here since: follow, into the trash. What
+                        // was done is remembered, so that the notebook being brought back, here or
+                        // elsewhere, is told from this device putting it in the trash of its own accord.
                         try place(nid, here.rel, true)
-                        known[nid] = nil
+                        let at = local[nid]!
+                        known[nid] = ["path": at.rel, "trashed": true, "md5": entry.md5 ?? "", "local": mine,
+                                      "stat": fileSign(at.url) ?? ""]
                         if !here.inTrash { summary.removed += 1 }
                         continue
                     }
-                    try await push(nid, entry)   // edited after the deletion: the edit wins
+                    try await push(nid, entry)   // edited, or brought back, after the deletion: that wins
                     content = false
                 }
                 if content {

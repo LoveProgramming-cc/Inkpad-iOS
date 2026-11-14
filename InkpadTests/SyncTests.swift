@@ -627,4 +627,63 @@ final class SyncTests: XCTestCase {
         let again = try await sync(a)
         XCTAssertEqual(again.up, 1)
     }
+
+    /// A notebook brought back after another device followed its deletion stays back.
+    func testBroughtBackStaysBack() async throws {
+        let storeA = Store(root: a), storeB = Store(root: b)
+        let folder = try storeA.newFolder(storeA.root, "课程")
+        try storeA.newNotebook(folder, PageTemplate(), name: "数学")
+        let loose = try storeA.newNotebook(storeA.root, PageTemplate(), name: "散页")
+        try await sync(a); try await sync(b); try await sync(a)
+
+        // A folder put in the trash, followed by the other device, then put back.
+        try storeA.trash(folder)
+        try await sync(a); try await sync(b); try await sync(a)
+        XCTAssertEqual(books(b), ["散页.inkpad"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.appendingPathComponent(".trash/课程/数学.inkpad").path))
+        try storeA.restore(storeA.trashed()[0].url)
+        for _ in 0..<3 { try await sync(a); try await sync(b) }
+        XCTAssertEqual(books(a), ["散页.inkpad", "课程/数学.inkpad"])
+        XCTAssertEqual(books(b), ["散页.inkpad", "课程/数学.inkpad"])
+        XCTAssertTrue(storeB.trashed().isEmpty, "no empty folder left in the trash")
+
+        // Deleted for good, followed, then fetched back from the cloud.
+        try storeA.trash(loose)
+        try storeA.delete(storeA.trashed()[0].url)
+        try await sync(a); try await sync(b); try await sync(a)
+        let gone = try await LibrarySync.cloudDeleted(root: a, drive: FakeDrive(cloud))
+        try await LibrarySync.cloudRestore(root: a, drive: FakeDrive(cloud), ids: gone.map(\.id))
+        for _ in 0..<3 { try await sync(a); try await sync(b) }
+        XCTAssertEqual(books(a), ["散页.inkpad", "课程/数学.inkpad"])
+        XCTAssertEqual(books(b), ["散页.inkpad", "课程/数学.inkpad"])
+
+        // ...or put back from the trash on the device that followed.
+        try storeA.trash(loose)
+        try storeA.delete(storeA.trashed()[0].url)
+        try await sync(a); try await sync(b); try await sync(a); try await sync(b)
+        try storeB.restore(storeB.trashed()[0].url)
+        for _ in 0..<3 { try await sync(b); try await sync(a) }
+        XCTAssertEqual(books(a), ["散页.inkpad", "课程/数学.inkpad"])
+        XCTAssertEqual(books(b), ["散页.inkpad", "课程/数学.inkpad"])
+    }
+
+    /// Favourites are not written over by a device that only trashed something.
+    func testStaleFavouritesStayStale() async throws {
+        let storeA = Store(root: a), storeB = Store(root: b)
+        let one = try storeA.newNotebook(storeA.root, PageTemplate(), name: "一")
+        try storeA.newNotebook(storeA.root, PageTemplate(), name: "二")
+        try await sync(a); try await sync(b)
+        storeA.toggleFavorite(one)
+        try await sync(a)
+        try storeB.trash(b.appendingPathComponent("二.inkpad"))
+        try await sync(b); try await sync(a)
+        storeA.reloadMeta(); storeB.reloadMeta()
+        XCTAssertEqual(storeA.favorites().map(\.name), ["一"])
+        XCTAssertEqual(storeB.favorites().map(\.name), ["一"])
+    }
+
+    func testNamesTheLibraryCanShow() throws {
+        let store = Store(root: a)
+        XCTAssertEqual(try store.newFolder(store.root, ".隐藏/文件夹").lastPathComponent, "隐藏-文件夹")
+    }
 }

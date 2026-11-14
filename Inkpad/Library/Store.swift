@@ -53,7 +53,17 @@ final class Store {
     }
 
     private func saveMeta() {
-        meta["ts"] = Date().timeIntervalSince1970
+        // The time stamp says when the favourites and folder styles, the part that is synced
+        // whole (newer wins), were last changed here: other changes leave it, or a device with
+        // stale favourites that trashed a notebook would write them over everyone's.
+        let old = (try? Data(contentsOf: metaURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        func same(_ key: String) -> Bool {
+            let empty: Any = key == "favorites" ? [Any]() : [String: Any]()
+            return ((old[key] ?? empty) as AnyObject).isEqual(meta[key] ?? empty)
+        }
+        if !same("favorites") || !same("folders") {
+            meta["ts"] = Date().timeIntervalSince1970
+        }
         if let data = try? JSONSerialization.data(withJSONObject: meta) { try? data.write(to: metaURL, options: .atomic) }
     }
 
@@ -135,6 +145,11 @@ final class Store {
     }
 
     static func unique(_ folder: URL, _ name: String, _ ext: String = "") -> URL {
+        // A name is made one the library can show: no slash (it would be a folder), no dot to begin with (a hidden file, which the library never shows).
+        var name = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        while name.hasPrefix(".") { name.removeFirst() }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { name = tr("未命名") }
         var url = folder.appendingPathComponent(name + ext)
         var n = 2
         while FileManager.default.fileExists(atPath: url.path) {

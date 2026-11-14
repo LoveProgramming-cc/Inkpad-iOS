@@ -158,9 +158,18 @@ final class GoogleDrive: NSObject, DriveAPI, URLSessionTaskDelegate {
             throw DriveError(tr("尚未连接 Google Drive"))
         }
         if Date().timeIntervalSince1970 >= num(token["expires_at"]) || token["access_token"] == nil {
-            let fresh = try await GoogleAccount.post(GoogleAccount.tokenURI, [
-                "client_id": GoogleAccount.clientID, "client_secret": GoogleAccount.clientSecret,
-                "refresh_token": refresh, "grant_type": "refresh_token"])
+            let fresh: [String: Any]
+            do {
+                fresh = try await GoogleAccount.post(GoogleAccount.tokenURI, [
+                    "client_id": GoogleAccount.clientID, "client_secret": GoogleAccount.clientSecret,
+                    "refresh_token": refresh, "grant_type": "refresh_token"])
+            } catch let error as DriveError where error.message.contains("invalid_grant") {
+                // The sign-in is no longer good (the grant was taken back, the password changed,
+                // or an app still "in testing" let it lapse after a week): it is forgotten, so
+                // that the settings offer to connect again, and the user is told just that.
+                Keychain.set("google_token", nil)
+                throw DriveError(tr("Google Drive 的登录已失效，请在设置中重新连接"))
+            }
             GoogleAccount.storeToken(fresh, refresh: refresh)
             token = GoogleAccount.token ?? token
         }

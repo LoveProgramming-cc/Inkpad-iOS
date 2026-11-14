@@ -504,7 +504,13 @@ final class AppModel: ObservableObject {
             if let new = LibrarySync.scan(store.root).0.values.first(where: { (try? Notebook.id(of: $0)) == id }) {
                 session.moved(to: new, sameContent: false)   // renamed or moved on another device
             } else {
-                // Deleted on another device: it is in the trash here now.
+                // Deleted on another device: it is in the trash here now. Edits not yet written
+                // go with it there, rather than being lost.
+                if session.doc.modified,
+                   let trashed = LibrarySync.scan(store.trashDir).0.values.first(where: { (try? Notebook.id(of: $0)) == id }) {
+                    session.moved(to: trashed)
+                    session.save(wait: true)
+                }
                 self.session = nil
                 show(tr("已删除"))
                 return
