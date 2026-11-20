@@ -124,6 +124,7 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
     var ruler: RulerView?
     let minimap = MinimapView()
     let hoverLayer = CAShapeLayer()
+    var typicalPressure = 0.5      // a running mean of the pressure strokes come down with, for the hover dot
     var mouseP = 0.45              // a mouse has no pressure: the line thins with speed instead
     var mouseLast = CGPoint.zero
     var penLast: TimeInterval = 0

@@ -31,6 +31,8 @@ final class Op {
     var at = CGPoint.zero                 // where in the view the selection was taken hold of
     var slack: CGFloat = 0                // how far a finger has to go before the selection follows it
     var live = false
+    var reflow = 0                        // a text box's left (-1) or right (1) edge is being dragged
+    var reflowed: TextItem?               // the text box with its lines as wide as the drag makes them
 
     init(_ kind: Kind, _ page: Page, _ i: Int) {
         self.kind = kind
@@ -654,7 +656,25 @@ extension CanvasView {
                     g.strokePath()
                 }
                 g.setLineDash(phase: 0, lengths: [])
-            case .move, .laser:
+            case .move:
+                // A text box being made wider or narrower: its new lines, and the box about them.
+                guard let t = op.reflowed else { break }
+                g.saveGState()
+                g.concatenate(pageToView(op.i))
+                t.draw(g, DrawEnv(onDark: true))
+                g.restoreGState()
+                let rect = viewRect(op.i, t.bbox)
+                g.setStrokeColor(accent.cgColor)
+                g.setLineWidth(1.5)
+                g.setLineDash(phase: 0, lengths: [6, 4])
+                g.stroke(rect.insetBy(dx: -4, dy: -4))
+                g.setLineDash(phase: 0, lengths: [])
+                let handle = CGRect(x: rect.maxX + 4 - 7, y: rect.maxY + 4 - 7, width: 14, height: 14)
+                g.setFillColor(UIColor.white.cgColor)
+                g.fillEllipse(in: handle)
+                g.setLineWidth(2)
+                g.strokeEllipse(in: handle)
+            case .laser:
                 break
             }
         }
@@ -775,6 +795,13 @@ extension CanvasView {
                 if hypot(v.x - op.at.x, v.y - op.at.y) < op.slack { return }
                 op.live = true
             }
+            if op.reflow != 0 {
+                guard let t = sel?.items.first as? TextItem else { return }
+                op.reflowed = reflowText(t, op.reflow, px - op.start.0)
+                moveLayer.isHidden = true
+                refreshOverlay()
+                return
+            }
             if op.scaling {
                 let (ox, oy) = op.origin, (sx, sy) = op.start
                 op.s = max(0.1, hypot(px - ox, py - oy) / max(1.0, hypot(sx - ox, sy - oy)))
@@ -892,6 +919,11 @@ extension CanvasView {
                 item.pts.append(Pt(x: px, y: py, p: last.p))
             }
             item.updateBBox()
+            if item.tool == "fountain" || item.tool == "brush" {
+                // The hover dot shows how wide strokes begin: the pressure of the first few points.
+                let start = item.pts.prefix(6)
+                if !start.isEmpty { typicalPressure += (start.reduce(0) { $0 + $1.p } / Double(start.count) - typicalPressure) * 0.3 }
+            }
             if !marker && !op.fixed && op.rule == nil && tools.p.scribbleErase && Geom.isScribble(item.pts, loose: tools.p.scribbleLoose) {
                 let targets = Geom.scribbleTargets(item.pts, page.items)
                 if !targets.isEmpty {
@@ -937,7 +969,10 @@ extension CanvasView {
             moveLayer.isHidden = true
             moveLayer.contents = nil
             guard let sel else { return }
-            if abs(op.s - 1) > 1e-3 || hypot(op.dx, op.dy) * zoom > 1 {
+            if let t = op.reflowed {
+                doc.replaceItems(page, sel.items, [t])
+                select(page, [t])
+            } else if abs(op.s - 1) > 1e-3 || hypot(op.dx, op.dy) * zoom > 1 {
                 let news = sel.items.map { $0.transformed(op.s, op.origin.0, op.origin.1, op.dx, op.dy) }
                 if op.copy {
                     doc.addItems(page, news)   // the originals stay where they were
@@ -1117,16 +1152,40 @@ extension CanvasView {
         new.start = toPage(i, v)
         new.origin = grip.origin
         new.scaling = grip.scaling
+        new.reflow = reflowSide(sel, i, v, reach: reach, scaling: grip.scaling)
+        if new.reflow != 0 { new.scaling = false }
         new.at = v
         new.slack = reach > 7 ? 8 : 0
         carry(new, image)
         return true
     }
 
+    /// A single text box taken by its left or right edge (not its corners or handle): which side,
+    /// for its lines to be made wider or narrower; 0 otherwise.
+    private func reflowSide(_ sel: Selection, _ i: Int, _ v: CGPoint, reach: Double, scaling: Bool) -> Int {
+        guard scaling, sel.items.count == 1, sel.items[0] is TextItem else { return 0 }
+        let (px, py) = toPage(i, v)
+        let b = sel.bbox, k = zoom
+        if hypot((px - b.x1) * k - 4, (py - b.y1) * k - 4) <= 18 { return 0 }   // the handle scales it
+        let box = b.padded(4 / k)
+        let inner = min(reach / k, box.w / 4, box.h / 4)
+        guard box.y0 + inner < py, py < box.y1 - inner else { return 0 }
+        return px <= (b.x0 + b.x1) / 2 ? -1 : 1
+    }
+
+    /// The text box [t] with its lines made dx wider at its right edge (side 1) or its left (-1).
+    private func reflowText(_ t: TextItem, _ side: Int, _ dx: Double) -> TextItem {
+        let pad = t.x - t.bbox.x0
+        let now = t.wrap > 0 ? t.wrap : t.bbox.w - 2 * pad
+        let wrap = max(t.size * 2, now + Double(side) * dx)   // room for a letter or two on a line
+        let x = side < 0 ? t.x + (now - wrap) : t.x
+        return TextItem(x, t.y, t.text, t.size, t.color, wrap: wrap, bg: t.bg)
+    }
+
     /// A second finger came down beside the one moving the selection: the selection goes back
     /// and a copy of it is carried instead. False if there is nothing being moved by a finger.
     func copyUnderFingers(_ first: UITouch) -> Bool {
-        guard first.type == .direct, let old = op, old.kind == .move, !old.copy, !old.scaling else { return false }
+        guard first.type == .direct, let old = op, old.kind == .move, !old.copy, !old.scaling, old.reflow == 0 else { return false }
         cancelOp()
         guard let sel, let i = index(of: sel.page), slots.indices.contains(i) else { return false }
         let v = first.location(in: self)

@@ -395,7 +395,8 @@ extension CanvasView {
         if !tools.p.crosshair, tool == "pen" || tool == "hl" || tool == "shape" {
             // The mark a pen is about to leave: its colour, and its width at this zoom.
             let hl = tool == "hl"
-            let d = max(2.5, CGFloat(hl ? tools.hlWidth : tools.penWidth) * CGFloat(zoom))
+            let w = hl ? tools.hlWidth : Stroke(tools.p.penType, tools.penColor, tools.penWidth, sens: tools.penSens).wAt(typicalPressure)
+            let d = max(2.5, CGFloat(w) * CGFloat(zoom))
             path = CGMutablePath()
             path.addEllipse(in: CGRect(x: -d / 2, y: -d / 2, width: d, height: d))
             ink = (hl ? tools.hlColor : tools.penColor).ui.withAlphaComponent(hl ? 0.55 : 1)
